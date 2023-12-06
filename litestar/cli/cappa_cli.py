@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import os
 import sys
 from dataclasses import dataclass
@@ -8,6 +9,7 @@ from typing import TYPE_CHECKING, Annotated
 import cappa
 import uvicorn
 from cappa import Dep, Subcommands
+from rich.tree import Tree
 
 from litestar.cli._utils import (
     UVICORN_INSTALLED,
@@ -16,16 +18,18 @@ from litestar.cli._utils import (
     show_app_info,
 )
 from litestar.cli.commands.core import _run_uvicorn_in_subprocess, _server_lifespan
+from litestar.routes import HTTPRoute, WebSocketRoute
+from litestar.utils.helpers import unwrap_partial
 
 if TYPE_CHECKING:
     from litestar import Litestar
 
 
-def info_command(_cli: LitestarCappa, app: Annotated[Litestar, Dep(app_from_env)]) -> None:
+def info_command(_cli: LitestarCappa, env: Annotated[LitestarEnv, Dep(env)]) -> None:
     """Show information about the Litestar app."""
-    if app is None:
+    if env.app is None:
         raise cappa.Exit(message="No Litestar app found", code=1)
-    show_app_info(app)
+    show_app_info(env.app)
 
 
 def version_command(version: Version) -> None:
@@ -36,7 +40,7 @@ def version_command(version: Version) -> None:
 
 
 def run_command(
-    _cli: LitestarCappa, run: Run, app: Annotated[Litestar, Dep(app_from_env)]
+    _cli: LitestarCappa, run: Run, env: Annotated[LitestarEnv, Dep(env)]
 ) -> None:  # sourcery skip: low-code-quality
     """Run a Litestar app; requires ``uvicorn``.
 
@@ -60,16 +64,16 @@ def run_command(
         sys.exit(1)
 
     if run.debug:
-        app.debug = True
+        env.app.debug = True
     if run.pdb:
-        app.pdb_on_exception = True
+        env.app.pdb_on_exception = True
 
-    reload_dirs = app.reload_dirs or run.reload_dir
+    reload_dirs = env.reload_dirs or run.reload_dir
 
     console.rule("[yellow]Starting server process", align="left")
 
-    show_app_info(app)
-    with _server_lifespan(app):
+    show_app_info(env.app)
+    with _server_lifespan(env.app):
         if run.wc == 1 and not run.reload:
             # A guard statement at the beginning of this function prevents uvicorn from being unbound
             # See "reportUnboundVariable in:
@@ -80,7 +84,7 @@ def run_command(
                 port=run.port,
                 fd=run.fd,
                 uds=run.uds,
-                factory=app.is_app_factory,
+                factory=env.is_app_factory,
                 ssl_certfile=run.ssl_certfile,
                 ssl_keyfile=run.ssl_keyfile,
             )
@@ -94,7 +98,7 @@ def run_command(
                 )
 
             _run_uvicorn_in_subprocess(
-                env=run.env,
+                env=env,
                 host=run.host,
                 port=run.port,
                 workers=run.wc,
@@ -102,10 +106,42 @@ def run_command(
                 reload_dirs=reload_dirs,
                 fd=run.fd,
                 uds=run.uds,
-                certfile_path=run.certfile_path,
-                keyfile_path=run.keyfile_path,
+                certfile_path=run.ssl_certfile,
+                keyfile_path=run.ssl_keyfile,
             )
 
+def routes_command(cli: LitestarCappa, env: Annotated[LitestarEnv, Dep(env)]) -> None:  # pragma: no c
+    """Display information about the application's routes."""
+
+    tree = Tree("", hide_root=True)
+
+    for route in sorted(env.app.routes, key=lambda r: r.path):
+        if isinstance(route, HTTPRoute):
+            branch = tree.add(f"[green]{route.path}[/green] (HTTP)")
+            for handler in route.route_handlers:
+                handler_info = [
+                    f"[blue]{handler.name or handler.handler_name}[/blue]",
+                ]
+
+                if inspect.iscoroutinefunction(unwrap_partial(handler.fn)):
+                    handler_info.append("[magenta]async[/magenta]")
+                else:
+                    handler_info.append("[yellow]sync[/yellow]")
+
+                handler_info.append(f'[cyan]{", ".join(sorted(handler.http_methods))}[/cyan]')
+
+                if len(handler.paths) > 1:
+                    for path in handler.paths:
+                        branch.add(" ".join([f"[green]{path}[green]", *handler_info]))
+                else:
+                    branch.add(" ".join(handler_info))
+
+        else:
+            route_type = "WS" if isinstance(route, WebSocketRoute) else "ASGI"
+            branch = tree.add(f"[green]{route.path}[/green] ({route_type})")
+            branch.add(f"[blue]{route.route_handler.name or route.route_handler.handler_name}[/blue]")
+
+    console.print(tree)
 
 @cappa.command(invoke=info_command)
 @dataclass
@@ -135,13 +171,18 @@ class Run:
     ssl_keyfile: Annotated[str | None, cappa.Arg(short=True, long=True, default=None)]
     create_self_signed_cert: Annotated[bool, cappa.Arg(short=True, default=False)]
 
+@cappa.command(invoke=routes_command)
+@dataclass
+class Routes:
+    ...
 
-def app_from_env(cli: LitestarCappa) -> Litestar | None:
-    return LitestarEnv.from_env(app_path=cli.app, app_dir=cli.app_dir).app
+
+def env(cli: LitestarCappa) -> LitestarEnv | None:
+    return LitestarEnv.from_env(app_path=cli.app, app_dir=cli.app_dir)
 
 
 @dataclass
 class LitestarCappa:
-    subcommands: Subcommands[Info | Version | Run]
+    subcommands: Subcommands[Info | Version | Run | Routes]
     app: Annotated[str | None, cappa.Arg(long=True, default=None)]
     app_dir: Annotated[str | None, cappa.Arg(long=True, default=None)]
