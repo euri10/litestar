@@ -1,9 +1,11 @@
-from litestar.cli.main import litestar_group
+import cappa
+
+from litestar.cli.cappa_cli import LitestarCappa
 
 
 def run_cli() -> None:
     """Application Entrypoint."""
-    litestar_group()
+    cappa.invoke(LitestarCappa)
 
 
 if __name__ == "__main__":

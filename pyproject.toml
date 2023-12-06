@@ -31,18 +31,19 @@ classifiers = [
   "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-  "anyio>=3",
-  "httpx>=0.22",
-  "importlib-metadata; python_version < \"3.10\"",
-  "importlib-resources>=5.12.0; python_version < \"3.9\"",
-  "msgspec>=0.18.2",
-  "multidict>=6.0.2",
-  "polyfactory>=2.6.3",
-  "pyyaml",
-  "typing-extensions",
-  "click",
-  "rich>=13.0.0",
-  "rich-click",
+    "anyio>=3",
+    "httpx>=0.22",
+    "importlib-metadata; python_version < \"3.10\"",
+    "importlib-resources>=5.12.0; python_version < \"3.9\"",
+    "msgspec>=0.18.2",
+    "multidict>=6.0.2",
+    "polyfactory>=2.6.3",
+    "pyyaml",
+    "typing-extensions",
+    "click",
+    "rich>=13.0.0",
+    "rich-click",
+    "cappa>=0.13.2",
 ]
 description = "Litestar - A production-ready, highly performant, extensible ASGI API Framework"
 keywords = ["api", "rest", "asgi", "litestar", "starlite"]
@@ -151,6 +152,7 @@ test = [
 
 [project.scripts]
 litestar = "litestar.__main__:run_cli"
+litestar_cappa = "litestar.__main__:run_cli_cappa"
 
 [tool.hatch.metadata]
 allow-direct-references = true
