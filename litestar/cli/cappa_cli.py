@@ -12,10 +12,11 @@ from cappa import Dep, Subcommands
 from litestar.cli._utils import (
     UVICORN_INSTALLED,
     LitestarEnv,
+    _run_uvicorn_in_subprocess,
+    _server_lifespan,
     console,
     show_app_info,
 )
-from litestar.cli.commands.core import _run_uvicorn_in_subprocess, _server_lifespan
 
 if TYPE_CHECKING:
     from litestar import Litestar

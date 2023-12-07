@@ -3,10 +3,8 @@ from __future__ import annotations
 import inspect
 import multiprocessing
 import os
-import subprocess
 import sys
-from contextlib import AbstractContextManager, ExitStack, contextmanager
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
 
 from rich.tree import Tree
 
@@ -14,6 +12,8 @@ from litestar.cli._utils import (
     RICH_CLICK_INSTALLED,
     UVICORN_INSTALLED,
     LitestarEnv,
+    _run_uvicorn_in_subprocess,
+    _server_lifespan,
     console,
     create_ssl_files,
     show_app_info,
@@ -38,21 +38,6 @@ if TYPE_CHECKING:
     from litestar import Litestar
 
 
-@contextmanager
-def _server_lifespan(app: Litestar) -> Iterator[None]:
-    """Context manager handling the ASGI server lifespan.
-
-    It will be entered just before the ASGI server is started through the CLI.
-    """
-    with ExitStack() as exit_stack:
-        for manager in app._server_lifespan_managers:
-            if not isinstance(manager, AbstractContextManager):
-                manager = manager(app)  # type: ignore[assignment]
-            exit_stack.enter_context(manager)  # type: ignore[arg-type]
-
-        yield
-
-
 def _convert_uvicorn_args(args: dict[str, Any]) -> list[str]:
     process_args = []
     for arg, value in args.items():
@@ -65,42 +50,6 @@ def _convert_uvicorn_args(args: dict[str, Any]) -> list[str]:
             process_args.append(f"--{arg}={value}")
 
     return process_args
-
-
-def _run_uvicorn_in_subprocess(
-    *,
-    env: LitestarEnv,
-    host: str | None,
-    port: int | None,
-    workers: int | None,
-    reload: bool,
-    reload_dirs: tuple[str, ...] | None,
-    fd: int | None,
-    uds: str | None,
-    certfile_path: str | None,
-    keyfile_path: str | None,
-) -> None:
-    process_args: dict[str, Any] = {
-        "reload": reload,
-        "host": host,
-        "port": port,
-        "workers": workers,
-        "factory": env.is_app_factory,
-    }
-    if fd is not None:
-        process_args["fd"] = fd
-    if uds is not None:
-        process_args["uds"] = uds
-    if reload_dirs:
-        process_args["reload-dir"] = reload_dirs
-    if certfile_path is not None:
-        process_args["ssl-certfile"] = certfile_path
-    if keyfile_path is not None:
-        process_args["ssl-keyfile"] = keyfile_path
-    subprocess.run(
-        [sys.executable, "-m", "uvicorn", env.app_path, *_convert_uvicorn_args(process_args)],  # noqa: S603
-        check=True,
-    )
 
 
 @command(name="version")

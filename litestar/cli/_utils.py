@@ -4,20 +4,23 @@ import contextlib
 import importlib
 import inspect
 import os
+import subprocess
 import sys
+from contextlib import AbstractContextManager, ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from itertools import chain
 from os import getenv
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Generator, Iterable, Sequence, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Callable, Generator, Iterable, Iterator, Sequence, TypeVar, cast
 
 from rich import get_console
 from rich.table import Table
 from typing_extensions import ParamSpec, get_type_hints
 
 from litestar import Litestar, __version__
+from litestar.cli.commands.core import _convert_uvicorn_args
 from litestar.middleware import DefineMiddleware
 from litestar.utils import get_name
 
@@ -539,3 +542,54 @@ def _generate_self_signed_cert(certfile_path: Path, keyfile_path: Path, common_n
                 encryption_algorithm=serialization.NoEncryption(),
             )
         )
+
+
+def _run_uvicorn_in_subprocess(
+    *,
+    env: LitestarEnv,
+    host: str | None,
+    port: int | None,
+    workers: int | None,
+    reload: bool,
+    reload_dirs: tuple[str, ...] | None,
+    fd: int | None,
+    uds: str | None,
+    certfile_path: str | None,
+    keyfile_path: str | None,
+) -> None:
+    process_args: dict[str, Any] = {
+        "reload": reload,
+        "host": host,
+        "port": port,
+        "workers": workers,
+        "factory": env.is_app_factory,
+    }
+    if fd is not None:
+        process_args["fd"] = fd
+    if uds is not None:
+        process_args["uds"] = uds
+    if reload_dirs:
+        process_args["reload-dir"] = reload_dirs
+    if certfile_path is not None:
+        process_args["ssl-certfile"] = certfile_path
+    if keyfile_path is not None:
+        process_args["ssl-keyfile"] = keyfile_path
+    subprocess.run(
+        [sys.executable, "-m", "uvicorn", env.app_path, *_convert_uvicorn_args(process_args)],  # noqa: S603
+        check=True,
+    )
+
+
+@contextmanager
+def _server_lifespan(app: Litestar) -> Iterator[None]:
+    """Context manager handling the ASGI server lifespan.
+
+    It will be entered just before the ASGI server is started through the CLI.
+    """
+    with ExitStack() as exit_stack:
+        for manager in app._server_lifespan_managers:
+            if not isinstance(manager, AbstractContextManager):
+                manager = manager(app)  # type: ignore[assignment]
+            exit_stack.enter_context(manager)  # type: ignore[arg-type]
+
+        yield
