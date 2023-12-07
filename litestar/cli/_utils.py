@@ -20,7 +20,6 @@ from rich.table import Table
 from typing_extensions import ParamSpec, get_type_hints
 
 from litestar import Litestar, __version__
-from litestar.cli.commands.core import _convert_uvicorn_args
 from litestar.middleware import DefineMiddleware
 from litestar.utils import get_name
 
@@ -593,3 +592,17 @@ def _server_lifespan(app: Litestar) -> Iterator[None]:
             exit_stack.enter_context(manager)  # type: ignore[arg-type]
 
         yield
+
+
+def _convert_uvicorn_args(args: dict[str, Any]) -> list[str]:
+    process_args = []
+    for arg, value in args.items():
+        if isinstance(value, bool):
+            if value:
+                process_args.append(f"--{arg}")
+        elif isinstance(value, tuple):
+            process_args.extend(f"--{arg}={item}" for item in value)
+        else:
+            process_args.append(f"--{arg}={value}")
+
+    return process_args
