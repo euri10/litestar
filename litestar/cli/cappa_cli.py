@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import dataclasses
 import inspect
 import os
 import sys
 from dataclasses import dataclass
-from typing import Annotated
+from typing import Annotated, dataclass_transform
 
 import cappa
 import uvicorn
-from cappa import Dep, Subcommands
+from cappa import Dep, Subcommand
 from rich.tree import Tree
 
 from litestar.cli._utils import (
@@ -182,8 +183,27 @@ def env(cli: LitestarCappa) -> LitestarEnv | None:
     return LitestarEnv.from_env(app_path=cli.app, app_dir=cli.app_dir)
 
 
+from cappa import Command, collect
+
+
+# @dataclass_transform()
+def litecappa(
+        _cls,
+):
+    def wrapper(_decorated_cls):
+
+
+        co = Command.get(_decorated_cls)
+        return _decorated_cls
+
+    if _cls is not None:
+        return wrapper(_cls)
+    return wrapper
+
+
+@litecappa
 @dataclass
 class LitestarCappa:
-    subcommands: Subcommands[Info | Version | Run | Routes]
+    default_commands: Annotated[Info | Version | Run | Routes, Subcommand(group=(4, "litestar"))]
     app: Annotated[str | None, cappa.Arg(long=True, default=None)]
     app_dir: Annotated[str | None, cappa.Arg(long=True, default=None)]

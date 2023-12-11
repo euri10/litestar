@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Iterator, Protocol, TypeVar, Union, cast, runtime_checkable
-
 if TYPE_CHECKING:
     from click import Group
 
+    import cappa
     from litestar._openapi.schema_generation import SchemaCreator
     from litestar.app import Litestar
     from litestar.config.app import AppConfig
@@ -85,7 +85,7 @@ class CLIPluginProtocol(Protocol):
 
     __slots__ = ()
 
-    def on_cli_init(self, cli: Group) -> None:
+    def on_cli_init(self, cli: cappa.Command) -> None:
         """Called when the CLI is initialized.
 
         This can be used to extend or override existing commands.
