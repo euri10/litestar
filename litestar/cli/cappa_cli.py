@@ -191,9 +191,7 @@ def litecappa(
         _cls,
 ):
     def wrapper(_decorated_cls):
-
-
-        co = Command.get(_decorated_cls)
+        print(_decorated_cls)
         return _decorated_cls
 
     if _cls is not None:
@@ -204,6 +202,6 @@ def litecappa(
 @litecappa
 @dataclass
 class LitestarCappa:
-    default_commands: Annotated[Info | Version | Run | Routes, Subcommand(group=(4, "litestar"))]
+    default_commands: Annotated[Info | Version | Run | Routes, Subcommand]
     app: Annotated[str | None, cappa.Arg(long=True, default=None)]
     app_dir: Annotated[str | None, cappa.Arg(long=True, default=None)]
