@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, List, Tuple
 from unittest.mock import MagicMock, Mock, PropertyMock
 
 import pytest
+import cappa
 from click import Group
 from pytest import MonkeyPatch
 
@@ -373,7 +374,7 @@ def test_registering_route_handler_generates_openapi_docs() -> None:
 
 def test_plugin_properties() -> None:
     class FooPlugin(CLIPluginProtocol):
-        def on_cli_init(self, cli: Group) -> None:
+        def on_cli_init(self, cli: cappa.Command) -> None:
             return
 
     app = Litestar(plugins=[FooPlugin(), SQLAlchemySerializationPlugin()])

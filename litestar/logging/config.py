@@ -4,7 +4,6 @@ import sys
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
 from importlib.util import find_spec
-from logging import INFO
 from typing import TYPE_CHECKING, Any, Callable, Literal, cast
 
 from litestar.exceptions import ImproperlyConfiguredException, MissingDependencyException

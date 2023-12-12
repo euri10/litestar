@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import cappa
 import pytest
 from click import Group
 
@@ -70,7 +71,7 @@ def test_plugin_registry() -> None:
 
 def test_plugin_registry_get() -> None:
     class CLIPlugin(CLIPluginProtocol):
-        def on_cli_init(self, cli: Group) -> None:
+        def on_cli_init(self, cli: cappa.Command) -> None:
             pass
 
     cli_plugin = CLIPlugin()

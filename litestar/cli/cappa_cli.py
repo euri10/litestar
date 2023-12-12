@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import dataclasses
 import inspect
 import os
 import sys
 from dataclasses import dataclass
-from typing import Annotated, dataclass_transform
+from typing import Annotated
 
 import cappa
 import uvicorn
@@ -24,11 +23,11 @@ from litestar.routes import HTTPRoute, WebSocketRoute
 from litestar.utils.helpers import unwrap_partial
 
 
-def info_command(_cli: LitestarCappa, env: Annotated[LitestarEnv, Dep(env)]) -> None:
+def info_command(_cli: LitestarCappa) -> None:
     """Show information about the Litestar app."""
-    if env.app is None:
+    if _cli.env.app is None:
         raise cappa.Exit(message="No Litestar app found", code=1)
-    show_app_info(env.app)
+    show_app_info(_cli.env.app)
 
 
 def version_command(version: Version) -> None:
@@ -39,7 +38,7 @@ def version_command(version: Version) -> None:
 
 
 def run_command(
-    _cli: LitestarCappa, run: Run, env: Annotated[LitestarEnv, Dep(env)]
+    _cli: LitestarCappa, run: Run,
 ) -> None:  # sourcery skip: low-code-quality
     """Run a Litestar app; requires ``uvicorn``.
 
@@ -63,16 +62,16 @@ def run_command(
         sys.exit(1)
 
     if run.debug:
-        env.app.debug = True
+        _cli.env.app.debug = True
     if run.pdb:
-        env.app.pdb_on_exception = True
+        _cli.env.app.pdb_on_exception = True
 
-    reload_dirs = env.reload_dirs or run.reload_dir
+    reload_dirs = _cli.env.reload_dirs or run.reload_dir
 
     console.rule("[yellow]Starting server process", align="left")
 
-    show_app_info(env.app)
-    with _server_lifespan(env.app):
+    show_app_info(_cli.env.app)
+    with _server_lifespan(_cli.env.app):
         if run.wc == 1 and not run.reload:
             # A guard statement at the beginning of this function prevents uvicorn from being unbound
             # See "reportUnboundVariable in:
@@ -83,7 +82,7 @@ def run_command(
                 port=run.port,
                 fd=run.fd,
                 uds=run.uds,
-                factory=env.is_app_factory,
+                factory=_cli.env.is_app_factory,
                 ssl_certfile=run.ssl_certfile,
                 ssl_keyfile=run.ssl_keyfile,
             )
@@ -110,12 +109,12 @@ def run_command(
             )
 
 
-def routes_command(cli: LitestarCappa, env: Annotated[LitestarEnv, Dep(env)]) -> None:  # pragma: no c
+def routes_command(_cli: LitestarCappa) -> None:  # pragma: no c
     """Display information about the application's routes."""
 
     tree = Tree("", hide_root=True)
 
-    for route in sorted(env.app.routes, key=lambda r: r.path):
+    for route in sorted(_cli.env.app.routes, key=lambda r: r.path):
         if isinstance(route, HTTPRoute):
             branch = tree.add(f"[green]{route.path}[/green] (HTTP)")
             for handler in route.route_handlers:
@@ -183,25 +182,35 @@ def env(cli: LitestarCappa) -> LitestarEnv | None:
     return LitestarEnv.from_env(app_path=cli.app, app_dir=cli.app_dir)
 
 
-from cappa import Command, collect
-
-
-# @dataclass_transform()
 def litecappa(
         _cls,
 ):
     def wrapper(_decorated_cls):
         print(_decorated_cls)
+        # _decorated_cls.env = LitestarEnv.from_env(app_path=_decorated_cls.app, app_dir=_decorated_cls.app_dir)
         return _decorated_cls
 
     if _cls is not None:
         return wrapper(_cls)
     return wrapper
 
+@dataclass
+class LL:
+    def __init__(self, *args, **kwargs) -> None:
+        print("LL")
+        print(args, kwargs)
+        self.lscli = args[0]
+        cappa.collect(self.lscli)
+        print(self.lscli)
 
-@litecappa
+@cappa.command(_cls=LL)
 @dataclass
 class LitestarCappa:
     default_commands: Annotated[Info | Version | Run | Routes, Subcommand]
     app: Annotated[str | None, cappa.Arg(long=True, default=None)]
     app_dir: Annotated[str | None, cappa.Arg(long=True, default=None)]
+
+
+    def __post_init__(self):
+        print("post init env")
+        self.env = LitestarEnv.from_env(app_path=self.app, app_dir=self.app_dir)
