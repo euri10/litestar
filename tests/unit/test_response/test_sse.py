@@ -1,3 +1,5 @@
+import asyncio
+import json
 from typing import AsyncIterator, Iterator, List
 
 import anyio
@@ -5,7 +7,8 @@ import pytest
 from httpx_sse import ServerSentEvent as HTTPXServerSentEvent
 from httpx_sse import aconnect_sse
 
-from litestar import get
+from litestar import get, Litestar
+from litestar.config.cors import CORSConfig
 from litestar.exceptions import ImproperlyConfiguredException
 from litestar.response import ServerSentEvent
 from litestar.response.sse import ServerSentEventMessage
@@ -99,3 +102,62 @@ async def test_various_sse_inputs(input: str, expected_events: List[HTTPXServerS
 def test_invalid_content_type_raises() -> None:
     with pytest.raises(ImproperlyConfiguredException):
         ServerSentEvent(content=object())  # type: ignore[arg-type]
+
+
+
+@get("/testme")
+async def handler() -> ServerSentEvent:
+    async def result_notifier() -> AsyncIterator[SSEData]:
+        # for i in itertools.count(1):
+        count = 0
+        while count < 10:
+            await asyncio.sleep(0.1)
+            count += 1
+            payload = {"status": str(count)}
+            event = ServerSentEventMessage(event="task_progress", data=json.dumps(payload))
+            yield event
+
+        payload = {"status": "Ready"}
+        event = ServerSentEventMessage(event="task_progress", data=json.dumps(payload))
+        yield event
+        await asyncio.sleep(0.1)
+        print(1)
+        event = ServerSentEventMessage(event="endx", data="t c")
+        yield event
+        print(2)
+
+    return ServerSentEvent(result_notifier())
+cors_config = CORSConfig(allow_origins=["*"])
+
+app = Litestar(route_handlers=[handler], cors_config=cors_config)
+
+async def test_yield_empty_on_end() -> None:
+
+    @get("/testme")
+    async def handler() -> ServerSentEvent:
+
+        async def result_notifier() -> AsyncIterator[SSEData]:
+            # for i in itertools.count(1):
+            count = 0
+            while count < 10:
+                await asyncio.sleep(0.1)
+                count += 1
+                payload = {"status": str(count)}
+                event = ServerSentEventMessage(event="task_progress", data=json.dumps(payload))
+                yield event
+
+            payload = {"status": "Ready"}
+            event = ServerSentEventMessage(event="task_progress", data=json.dumps(payload))
+            yield event
+            await asyncio.sleep(0.1)
+            event = ServerSentEventMessage(event="endx")
+            yield event
+
+        return ServerSentEvent(result_notifier())
+
+    async with create_async_test_client(handler) as client:
+        async with aconnect_sse(client, "GET", f"{client.base_url}/testme") as event_source:
+            events = [sse async for sse in event_source.aiter_sse()]
+            for i in range(len(events)):
+                print(events[i])
+
