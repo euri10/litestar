@@ -10,20 +10,16 @@ the application:
    from litestar.di import Provide
 
 
-   async def bool_fn() -> bool:
-       ...
+   async def bool_fn() -> bool: ...
 
 
-   async def dict_fn() -> dict:
-       ...
+   async def dict_fn() -> dict: ...
 
 
-   async def list_fn() -> list:
-       ...
+   async def list_fn() -> list: ...
 
 
-   async def int_fn() -> int:
-       ...
+   async def int_fn() -> int: ...
 
 
    class MyController(Controller):
@@ -39,8 +35,7 @@ the application:
            router_dependency: dict,
            controller_dependency: list,
            local_dependency: int,
-       ) -> None:
-           ...
+       ) -> None: ...
 
        # on the router
 
@@ -57,6 +52,14 @@ the application:
    )
 
 The above example illustrates how dependencies are declared on the different layers of the application.
+
+.. note::
+
+    Litestar needs the injected types at runtime which might clash with linter rules' recommendation to use ``TYPE_CHECKING``.
+
+    .. seealso::
+
+        :ref:`Signature namespace <signature_namespace>`
 
 Dependencies can be either callables - sync or async functions, methods, or class instances that implement the
 :meth:`object.__call__` method, or classes. These are in turn wrapped inside an instance of the
@@ -80,9 +83,9 @@ The pre-requisites for dependency injection are these:
 
 What is *scope* in this context? Dependencies are **isolated** to the context in which they are declared. Thus, in the
 above example, the ``local_dependency`` can only be accessed within the specific route handler on which it was declared;
-The ``controller_dependency`` is available only for route handlers on that specific controller; And the router
-dependencies are available only to the route handlers registered on that particular router. Only the ``app_dependencies``
-are available to all route handlers.
+The ``controller_dependency`` is available only for route handlers on that specific controller; And the ``router
+dependency`` is available only to the route handlers registered on that particular router. Only the ``app_dependency``
+is available to all route handlers.
 
 .. _yield_dependencies:
 
@@ -193,8 +196,7 @@ can :ref:`inject into route handlers <usage/routing/handlers:"reserved" keyword 
        name: str
 
 
-   async def retrieve_db_user(user_id: UUID4) -> User:
-       ...
+   async def retrieve_db_user(user_id: UUID4) -> User: ...
 
 
    class UserController(Controller):
@@ -202,8 +204,7 @@ can :ref:`inject into route handlers <usage/routing/handlers:"reserved" keyword 
        dependencies = {"user": Provide(retrieve_db_user)}
 
        @patch(path="/{user_id:uuid}")
-       async def get_user(self, user: User) -> User:
-           ...
+       async def get_user(self, user: User) -> User: ...
 
 In the above example we have a ``User`` model that we are persisting into a db. The model is fetched using the helper
 method ``retrieve_db_user`` which receives a ``user_id`` kwarg and retrieves the corresponding ``User`` instance.
@@ -225,12 +226,10 @@ very simple:
    from litestar.di import Provide
 
 
-   def bool_fn() -> bool:
-       ...
+   def bool_fn() -> bool: ...
 
 
-   def dict_fn() -> dict:
-       ...
+   def dict_fn() -> dict: ...
 
 
    class MyController(Controller):
@@ -243,8 +242,7 @@ very simple:
        def my_route_handler(
            self,
            some_dependency: bool,
-       ) -> None:
-           ...
+       ) -> None: ...
 
 The lower scoped route handler function declares a dependency with the same key as the one declared on the higher scoped
 controller. The lower scoped dependency therefore overrides the higher scoped one.
@@ -275,8 +273,7 @@ it in ``Provide``:
            )
        },
    )
-   def my_handler(my_dep: int) -> None:
-       ...
+   def my_handler(my_dep: int) -> None: ...
 
 
 .. attention::

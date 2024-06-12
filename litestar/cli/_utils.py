@@ -4,17 +4,19 @@ import contextlib
 import importlib
 import inspect
 import os
-import subprocess
+import re
 import sys
 from contextlib import AbstractContextManager, ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import wraps
+from importlib.util import find_spec
 from itertools import chain
 from os import getenv
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Generator, Iterable, Iterator, Sequence, TypeVar, cast
 
+from click import ClickException, Command, Context, Group, pass_context
 from rich import get_console
 from rich.table import Table
 from typing_extensions import ParamSpec, get_type_hints
@@ -23,32 +25,23 @@ from litestar import Litestar, __version__
 from litestar.middleware import DefineMiddleware
 from litestar.utils import get_name
 
-RICH_CLICK_INSTALLED = False
-with contextlib.suppress(ImportError):
-    import rich_click  # noqa: F401
-
-    RICH_CLICK_INSTALLED = True
-UVICORN_INSTALLED = False
-with contextlib.suppress(ImportError):
-    import uvicorn  # noqa: F401
-
-    UVICORN_INSTALLED = True
-JSBEAUTIFIER_INSTALLED = False
-with contextlib.suppress(ImportError):
-    import jsbeautifier  # noqa: F401
-
-    JSBEAUTIFIER_INSTALLED = True
-
-if TYPE_CHECKING or not RICH_CLICK_INSTALLED:  # pragma: no cover
-    from click import ClickException, Command, Context, Group, pass_context
+if sys.version_info >= (3, 10):
+    from importlib.metadata import entry_points
 else:
-    from rich_click import ClickException, Context, pass_context
-    from rich_click.rich_command import RichCommand as Command  # noqa: TCH002
-    from rich_click.rich_group import RichGroup as Group
+    from importlib_metadata import entry_points
+
+
+if TYPE_CHECKING:
+    from litestar.openapi import OpenAPIConfig
+    from litestar.routes import ASGIRoute, HTTPRoute, WebSocketRoute
+    from litestar.types import AnyCallable
+
+
+UVICORN_INSTALLED = find_spec("uvicorn") is not None
+JSBEAUTIFIER_INSTALLED = find_spec("jsbeautifier") is not None
 
 
 __all__ = (
-    "RICH_CLICK_INSTALLED",
     "UVICORN_INSTALLED",
     "JSBEAUTIFIER_INSTALLED",
     "LoadedApp",
@@ -58,16 +51,6 @@ __all__ = (
     "LitestarGroup",
     "show_app_info",
 )
-
-
-if sys.version_info >= (3, 10):
-    from importlib.metadata import entry_points
-else:
-    from importlib_metadata import entry_points
-
-
-if TYPE_CHECKING:
-    from litestar.types import AnyCallable
 
 
 P = ParamSpec("P")
@@ -92,20 +75,11 @@ class LitestarEnv:
     """Information about the current Litestar environment variables."""
 
     app_path: str
-    debug: bool
     app: Litestar
     cwd: Path
     host: str | None = None
     port: int | None = None
-    fd: int | None = None
-    uds: str | None = None
-    reload: bool | None = None
-    reload_dirs: tuple[str, ...] | None = None
-    web_concurrency: int | None = None
     is_app_factory: bool = False
-    certfile_path: str | None = None
-    keyfile_path: str | None = None
-    create_self_signed_cert: bool = False
 
     @classmethod
     def from_env(cls, app_path: str | None, app_dir: Path | None = None) -> LitestarEnv:
@@ -123,36 +97,26 @@ class LitestarEnv:
 
             dotenv.load_dotenv()
         app_path = app_path or getenv("LITESTAR_APP")
+        app_name = getenv("LITESTAR_APP_NAME") or "Litestar"
+        quiet_console = getenv("LITESTAR_QUIET_CONSOLE") or False
         if app_path and getenv("LITESTAR_APP") is None:
             os.environ["LITESTAR_APP"] = app_path
         if app_path:
-            console.print(f"Using Litestar app from env: [bright_blue]{app_path!r}")
+            if not quiet_console and isatty():
+                console.print(f"Using {app_name} app from env: [bright_blue]{app_path!r}")
             loaded_app = _load_app_from_path(app_path)
         else:
             loaded_app = _autodiscover_app(cwd)
 
         port = getenv("LITESTAR_PORT")
-        web_concurrency = getenv("WEB_CONCURRENCY")
-        uds = getenv("LITESTAR_UNIX_DOMAIN_SOCKET")
-        fd = getenv("LITESTAR_FILE_DESCRIPTOR")
-        reload_dirs = tuple(s.strip() for s in getenv("LITESTAR_RELOAD_DIRS", "").split(",") if s) or None
 
         return cls(
             app_path=loaded_app.app_path,
             app=loaded_app.app,
-            debug=_bool_from_env("LITESTAR_DEBUG"),
             host=getenv("LITESTAR_HOST"),
             port=int(port) if port else None,
-            uds=uds,
-            fd=int(fd) if fd else None,
-            reload=_bool_from_env("LITESTAR_RELOAD"),
-            reload_dirs=reload_dirs,
-            web_concurrency=int(web_concurrency) if web_concurrency else None,
             is_app_factory=loaded_app.is_factory,
             cwd=cwd,
-            certfile_path=getenv("LITESTAR_SSL_CERT_PATH"),
-            keyfile_path=getenv("LITESTAR_SSL_KEY_PATH"),
-            create_self_signed_cert=_bool_from_env("LITESTAR_CREATE_SELF_SIGNED_CERT"),
         )
 
 
@@ -289,8 +253,8 @@ def _inject_args(func: Callable[P, T]) -> Callable[P, T]:
 
 def _wrap_commands(commands: Iterable[Command]) -> None:
     for command in commands:
-        if isinstance(command, Group):
-            _wrap_commands(command.commands.values())
+        if hasattr(command, "commands"):
+            _wrap_commands(command.commands.values())  # pyright: ignore[reportGeneralTypeIssues]
         elif command.callback:
             command.callback = _inject_args(command.callback)
 
@@ -340,6 +304,8 @@ def _autodiscovery_paths(base_dir: Path, arbitrary: bool = True) -> Generator[Pa
 
 
 def _autodiscover_app(cwd: Path) -> LoadedApp:
+    app_name = getenv("LITESTAR_APP_NAME") or "Litestar"
+    quiet_console = getenv("LITESTAR_QUIET_CONSOLE") or False
     for file_path in _autodiscovery_paths(cwd):
         import_path = _path_to_dotted_path(file_path.relative_to(cwd))
         module = importlib.import_module(import_path)
@@ -351,13 +317,15 @@ def _autodiscover_app(cwd: Path) -> LoadedApp:
             if isinstance(value, Litestar):
                 app_string = f"{import_path}:{attr}"
                 os.environ["LITESTAR_APP"] = app_string
-                console.print(f"Using Litestar app from [bright_blue]{app_string}")
+                if not quiet_console and isatty():
+                    console.print(f"Using {app_name} app from [bright_blue]{app_string}")
                 return LoadedApp(app=value, app_path=app_string, is_factory=False)
 
         if hasattr(module, "create_app"):
             app_string = f"{import_path}:create_app"
             os.environ["LITESTAR_APP"] = app_string
-            console.print(f"Using Litestar factory [bright_blue]{app_string}")
+            if not quiet_console and isatty():
+                console.print(f"Using {app_name} factory from [bright_blue]{app_string}")
             return LoadedApp(app=module.create_app(), app_path=app_string, is_factory=True)
 
         for attr, value in module.__dict__.items():
@@ -371,10 +339,11 @@ def _autodiscover_app(cwd: Path) -> LoadedApp:
             if return_annotation in ("Litestar", Litestar):
                 app_string = f"{import_path}:{attr}"
                 os.environ["LITESTAR_APP"] = app_string
-                console.print(f"Using Litestar factory [bright_blue]{app_string}")
+                if not quiet_console and sys.stdout.isatty():
+                    console.print(f"Using {app_name} factory from [bright_blue]{app_string}")
                 return LoadedApp(app=value(), app_path=f"{app_string}", is_factory=True)
 
-    raise LitestarCLIException("Could not find a Litestar app or factory")
+    raise LitestarCLIException(f"Could not find {app_name} instance or factory")
 
 
 def _format_is_enabled(value: Any) -> str:
@@ -401,7 +370,12 @@ def show_app_info(app: Litestar) -> None:  # pragma: no cover
 
     openapi_enabled = _format_is_enabled(app.openapi_config)
     if app.openapi_config:
-        openapi_enabled += f" path=[yellow]{app.openapi_config.openapi_controller.path}"
+        path = (
+            app.openapi_config.openapi_controller.path
+            if app.openapi_config.openapi_controller
+            else app.openapi_config.path or "/schema"
+        )
+        openapi_enabled += f" path=[yellow]{path}"
     table.add_row("OpenAPI", openapi_enabled)
 
     table.add_row("Compression", app.compression_config.backend if app.compression_config else "[red]Disabled")
@@ -453,7 +427,7 @@ def validate_ssl_file_paths(certfile_arg: str | None, keyfile_arg: str | None) -
             raise LitestarCLIException(f"File provided for {argname} was not found: {path}")
         resolved_paths.append(str(path))
 
-    return tuple(resolved_paths)  # type: ignore
+    return tuple(resolved_paths)  # type: ignore[return-value]
 
 
 def create_ssl_files(
@@ -505,7 +479,7 @@ def _generate_self_signed_cert(certfile_path: Path, keyfile_path: Path, common_n
         from cryptography.x509.oid import NameOID
     except ImportError as err:
         raise LitestarCLIException(
-            "Cryptogpraphy must be installed when using --create-self-signed-cert\nPlease install the litestar[cryptography] extras"
+            "Cryptography must be installed when using --create-self-signed-cert\nPlease install the litestar[cryptography] extras"
         ) from err
 
     subject = x509.Name(
@@ -543,66 +517,44 @@ def _generate_self_signed_cert(certfile_path: Path, keyfile_path: Path, common_n
         )
 
 
-def _run_uvicorn_in_subprocess(
-    *,
-    env: LitestarEnv,
-    host: str | None,
-    port: int | None,
-    workers: int | None,
-    reload: bool,
-    reload_dirs: tuple[str, ...] | None,
-    fd: int | None,
-    uds: str | None,
-    certfile_path: str | None,
-    keyfile_path: str | None,
-) -> None:
-    process_args: dict[str, Any] = {
-        "reload": reload,
-        "host": host,
-        "port": port,
-        "workers": workers,
-        "factory": env.is_app_factory,
-    }
-    if fd is not None:
-        process_args["fd"] = fd
-    if uds is not None:
-        process_args["uds"] = uds
-    if reload_dirs:
-        process_args["reload-dir"] = reload_dirs
-    if certfile_path is not None:
-        process_args["ssl-certfile"] = certfile_path
-    if keyfile_path is not None:
-        process_args["ssl-keyfile"] = keyfile_path
-    subprocess.run(
-        [sys.executable, "-m", "uvicorn", env.app_path, *_convert_uvicorn_args(process_args)],  # noqa: S603
-        check=True,
+def remove_routes_with_patterns(
+    routes: list[HTTPRoute | ASGIRoute | WebSocketRoute], patterns: tuple[str, ...]
+) -> list[HTTPRoute | ASGIRoute | WebSocketRoute]:
+    regex_routes = []
+    valid_patterns = []
+    for pattern in patterns:
+        try:
+            check_pattern = re.compile(pattern)
+            valid_patterns.append(check_pattern)
+        except re.error as e:
+            console.print(f"Error: {e}. Invalid regex pattern supplied: '{pattern}'. Omitting from querying results.")
+
+    for route in routes:
+        checked_pattern_route_matches = []
+        for pattern_compile in valid_patterns:
+            matches = pattern_compile.match(route.path)
+            checked_pattern_route_matches.append(matches)
+
+        if not any(checked_pattern_route_matches):
+            regex_routes.append(route)
+
+    return regex_routes
+
+
+def remove_default_schema_routes(
+    routes: list[HTTPRoute | ASGIRoute | WebSocketRoute], openapi_config: OpenAPIConfig
+) -> list[HTTPRoute | ASGIRoute | WebSocketRoute]:
+    schema_path = (
+        (openapi_config.path or "/schema")
+        if openapi_config.openapi_controller is None
+        else openapi_config.openapi_controller.path
     )
+    return remove_routes_with_patterns(routes, (schema_path,))
 
 
-@contextmanager
-def _server_lifespan(app: Litestar) -> Iterator[None]:
-    """Context manager handling the ASGI server lifespan.
+def isatty() -> bool:
+    """Detect if a terminal is TTY enabled.
 
-    It will be entered just before the ASGI server is started through the CLI.
+    This is a convenience wrapper around the built in system methods.  This allows for easier testing of TTY/non-TTY modes.
     """
-    with ExitStack() as exit_stack:
-        for manager in app._server_lifespan_managers:
-            if not isinstance(manager, AbstractContextManager):
-                manager = manager(app)  # type: ignore[assignment]
-            exit_stack.enter_context(manager)  # type: ignore[arg-type]
-
-        yield
-
-
-def _convert_uvicorn_args(args: dict[str, Any]) -> list[str]:
-    process_args = []
-    for arg, value in args.items():
-        if isinstance(value, bool):
-            if value:
-                process_args.append(f"--{arg}")
-        elif isinstance(value, tuple):
-            process_args.extend(f"--{arg}={item}" for item in value)
-        else:
-            process_args.append(f"--{arg}={value}")
-
-    return process_args
+    return sys.stdout.isatty()

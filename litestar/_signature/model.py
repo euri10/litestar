@@ -32,12 +32,13 @@ from litestar._signature.utils import (
     _validate_signature_dependencies,
 )
 from litestar.datastructures.state import ImmutableState
+from litestar.datastructures.url import URL
 from litestar.dto import AbstractDTO, DTOData
 from litestar.enums import ParamType, ScopeType
 from litestar.exceptions import InternalServerException, ValidationException
 from litestar.params import KwargDefinition, ParameterKwarg
 from litestar.typing import FieldDefinition  # noqa
-from litestar.utils import is_class_and_subclass
+from litestar.utils import get_origin_or_inner_type, is_class_and_subclass
 from litestar.utils.dataclass import simple_asdict
 
 if TYPE_CHECKING:
@@ -84,8 +85,15 @@ def _deserializer(target_type: Any, value: Any, default_deserializer: Callable[[
     if isinstance(value, DTOData):
         return value
 
-    if isinstance(value, target_type):
-        return value
+    try:
+        if isinstance(value, target_type):
+            return value
+    except TypeError as exc:
+        if (origin := get_origin_or_inner_type(target_type)) is not None:
+            if isinstance(value, origin):
+                return value
+        else:
+            raise exc
 
     if decoder := getattr(target_type, "_decoder", None):
         return decoder(target_type, value)
@@ -119,7 +127,11 @@ class SignatureModel(Struct):
             for err_message in messages
             if ("key" in err_message and err_message["key"] not in cls._dependency_name_set) or "key" not in err_message
         ]:
-            return ValidationException(detail=f"Validation failed for {method} {connection.url}", extra=client_errors)
+            path = URL.from_components(
+                path=connection.url.path,
+                query=connection.url.query,
+            )
+            return ValidationException(detail=f"Validation failed for {method} {path}", extra=client_errors)
         return InternalServerException()
 
     @classmethod
@@ -252,6 +264,7 @@ class SignatureModel(Struct):
                 field_definition=field_definition,
                 type_decoders=[*(type_decoders or []), *DEFAULT_TYPE_DECODERS],
                 meta_data=meta_data,
+                data_dto=data_dto,
             )
 
             default = field_definition.default if field_definition.has_default else NODEFAULT
@@ -277,7 +290,12 @@ class SignatureModel(Struct):
         field_definition: FieldDefinition,
         type_decoders: TypeDecodersSequence,
         meta_data: Meta | None = None,
+        data_dto: type[AbstractDTO] | None = None,
     ) -> Any:
+        # DTOs have already validated their data, so we can just use Any here
+        if field_definition.name == "data" and data_dto:
+            return Any
+
         annotation = _normalize_annotation(field_definition=field_definition)
 
         if annotation is Any:

@@ -8,10 +8,13 @@
 .scannerwork/
 .unasyncd_cache/
 .venv/
+.venv*
 .vscode/
 __pycache__/
+assets/
 build/
 dist/
+html/
 node_modules/
 results/
 site/

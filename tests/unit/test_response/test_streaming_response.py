@@ -3,17 +3,15 @@
 https://github.com/encode/starlette/blob/master/tests/test_responses.py And are meant to ensure our compatibility with
 their API.
 """
+
 from itertools import cycle
 from typing import TYPE_CHECKING, AsyncIterator, Iterator
 
 import anyio
-from httpx_sse import aconnect_sse
 
-from litestar import get
 from litestar.background_tasks import BackgroundTask
-from litestar.response import ServerSentEvent
 from litestar.response.streaming import ASGIStreamingResponse
-from litestar.testing import TestClient, create_async_test_client
+from litestar.testing import TestClient
 
 if TYPE_CHECKING:
     from litestar.types import Message, Receive, Scope, Send
@@ -59,7 +57,7 @@ async def test_streaming_response_stops_if_receiving_http_disconnect_with_async_
     response = ASGIStreamingResponse(iterator=stream_indefinitely())
 
     with anyio.move_on_after(1) as cancel_scope:
-        await response({}, receive_disconnect, send)  # type: ignore
+        await response({}, receive_disconnect, send)  # type: ignore[arg-type]
     assert not cancel_scope.cancel_called, "Content streaming should stop itself."
 
 
@@ -83,7 +81,7 @@ async def test_streaming_response_stops_if_receiving_http_disconnect_with_sync_i
     response = ASGIStreamingResponse(iterator=cycle(["1", "2", "3"]))
 
     with anyio.move_on_after(1) as cancel_scope:
-        await response({}, receive_disconnect, send)  # type: ignore
+        await response({}, receive_disconnect, send)  # type: ignore[arg-type]
     assert not cancel_scope.cancel_called, "Content streaming should stop itself."
 
 
@@ -168,32 +166,6 @@ def test_sync_streaming_response() -> None:
     client = TestClient(app)
     response = client.get("/")
     assert response.text == "1, 2, 3, 4, 5"
-
-
-async def test_sse_steaming_response() -> None:
-    @get(
-        path="/test",
-    )
-    def handler() -> ServerSentEvent:
-        def numbers(minimum: int, maximum: int) -> Iterator[str]:
-            for i in range(minimum, maximum + 1):
-                yield str(i)
-                if i != maximum:
-                    yield ", "
-
-        generator = numbers(1, 5)
-
-        return ServerSentEvent(content=generator, event_id=123, event_type="special", retry_duration=1000)
-
-    async with create_async_test_client(handler) as client:
-        async with aconnect_sse(client, "GET", f"{client.base_url}/test") as event_source:
-            events = [sse async for sse in event_source.aiter_sse()]
-            assert len(events) == 1
-            (sse,) = events
-            assert sse.event == "special"
-            assert sse.data == "1\n, \n2\n, \n3\n, \n4\n, \n5"
-            assert sse.id == "123"
-            assert sse.retry == 1000
 
 
 def test_asgi_response_encoded_headers() -> None:

@@ -11,12 +11,13 @@ from unittest.mock import MagicMock
 import pytest
 from typing_extensions import TypeAlias
 
-from litestar import Controller, Litestar, MediaType, Response, get, post
+from litestar import Controller, Litestar, MediaType, Response, delete, get, post
 from litestar._openapi.datastructures import OpenAPIContext
 from litestar._openapi.responses import (
     ResponseFactory,
     create_error_responses,
 )
+from litestar._openapi.schema_generation.plugins import openapi_schema_plugins
 from litestar.datastructures import Cookie, ResponseHeader
 from litestar.dto import AbstractDTO
 from litestar.exceptions import (
@@ -27,13 +28,14 @@ from litestar.exceptions import (
 from litestar.handlers import HTTPRouteHandler
 from litestar.openapi.config import OpenAPIConfig
 from litestar.openapi.datastructures import ResponseSpec
-from litestar.openapi.spec import OpenAPIHeader, OpenAPIMediaType, Reference, Schema
+from litestar.openapi.spec import Example, OpenAPIHeader, OpenAPIMediaType, Reference, Schema
 from litestar.openapi.spec.enums import OpenAPIType
 from litestar.response import File, Redirect, Stream, Template
 from litestar.response.base import T
 from litestar.routes import HTTPRoute
 from litestar.status_codes import (
     HTTP_200_OK,
+    HTTP_204_NO_CONTENT,
     HTTP_307_TEMPORARY_REDIRECT,
     HTTP_400_BAD_REQUEST,
     HTTP_406_NOT_ACCEPTABLE,
@@ -51,8 +53,7 @@ def create_factory() -> CreateFactoryFixture:
         return ResponseFactory(
             context=OpenAPIContext(
                 openapi_config=OpenAPIConfig(title="test", version="1.0.0", create_examples=generate_examples),
-                plugins=[],
-                schemas={},
+                plugins=openapi_schema_plugins,
             ),
             route_handler=route_handler,
         )
@@ -231,17 +232,13 @@ def test_create_success_response_with_response_class(create_factory: CreateFacto
 
     handler = get_registered_route_handler(handler, "test")
     factory = create_factory(handler, True)
-    schemas = factory.context.schemas
     response = factory.create_success_response()
 
     assert response.content
     reference = response.content["application/json"].schema
 
     assert isinstance(reference, Reference)
-    key = reference.ref.split("/")[-1]
-    assert isinstance(schemas[key], Schema)
-
-    assert key == "tests_models_DataclassPerson"
+    assert isinstance(factory.context.schema_registry.from_reference(reference).schema, Schema)
 
 
 def test_create_success_response_with_stream(create_factory: CreateFactoryFixture) -> None:
@@ -284,6 +281,29 @@ def test_create_success_response_redirect_override(create_factory: CreateFactory
     assert isinstance(location.schema, Schema)
     assert location.schema.type == OpenAPIType.STRING
     assert location.description
+
+
+def test_create_success_response_no_content_explicit_responsespec(
+    create_factory: CreateFactoryFixture,
+) -> None:
+    @delete(
+        path="/test",
+        responses={HTTP_204_NO_CONTENT: ResponseSpec(None, description="Custom description")},
+        name="test",
+    )
+    def handler() -> None:
+        return None
+
+    handler = get_registered_route_handler(handler, "test")
+    factory = create_factory(handler)
+    responses = factory.create_additional_responses()
+    status, response = next(responses)
+    assert status == "204"
+    assert response.description == "Custom description"
+    assert not response.content
+
+    with pytest.raises(StopIteration):
+        next(responses)
 
 
 def test_create_success_response_file_data(create_factory: CreateFactoryFixture) -> None:
@@ -347,7 +367,6 @@ def test_create_additional_responses(create_factory: CreateFactoryFixture) -> No
         return DataclassPersonFactory.build()
 
     factory = create_factory(handler)
-    schemas = factory.context.schemas
     responses = factory.create_additional_responses()
 
     first_response = next(responses)
@@ -358,7 +377,7 @@ def test_create_additional_responses(create_factory: CreateFactoryFixture) -> No
     assert isinstance(first_response[1].content["application/json"], OpenAPIMediaType)
     reference = first_response[1].content["application/json"].schema
     assert isinstance(reference, Reference)
-    schema = schemas[reference.ref.split("/")[-1]]
+    schema = factory.context.schema_registry.from_reference(reference).schema
     assert isinstance(schema, Schema)
     assert schema.title == "AuthenticationError"
 
@@ -370,7 +389,7 @@ def test_create_additional_responses(create_factory: CreateFactoryFixture) -> No
     assert isinstance(second_response[1].content["text/plain"], OpenAPIMediaType)
     reference = second_response[1].content["text/plain"].schema
     assert isinstance(reference, Reference)
-    schema = schemas[reference.ref.split("/")[-1]]
+    schema = factory.context.schema_registry.from_reference(reference).schema
     assert isinstance(schema, Schema)
     assert schema.title == "ServerError"
     assert not schema.examples
@@ -421,6 +440,28 @@ def test_additional_responses_overlap_with_raises(create_factory: CreateFactoryF
     assert responses["400"].description == "Overwritten response"
 
 
+def test_additional_responses_with_custom_examples(create_factory: CreateFactoryFixture) -> None:
+    @get(responses={200: ResponseSpec(DataclassPerson, examples=[Example(value={"string": "example", "number": 1})])})
+    def handler() -> DataclassPerson:
+        return DataclassPersonFactory.build()
+
+    factory = create_factory(handler)
+    responses = factory.create_additional_responses()
+    status_code, response = next(responses)
+    assert response.content
+    assert response.content["application/json"].examples == {
+        "dataclassperson-example-1": Example(
+            value={
+                "string": "example",
+                "number": 1,
+            }
+        ),
+    }
+
+    with pytest.raises(StopIteration):
+        next(responses)
+
+
 def test_create_response_for_response_subclass(create_factory: CreateFactoryFixture) -> None:
     class CustomResponse(Response[T]):
         pass
@@ -431,14 +472,13 @@ def test_create_response_for_response_subclass(create_factory: CreateFactoryFixt
 
     handler = get_registered_route_handler(handler, "test")
     factory = create_factory(handler, True)
-    schemas = factory.context.schemas
     response = factory.create_success_response()
 
     assert response.content
     assert isinstance(response.content["application/json"], OpenAPIMediaType)
     reference = response.content["application/json"].schema
     assert isinstance(reference, Reference)
-    schema = schemas[reference.value]
+    schema = factory.context.schema_registry.from_reference(reference).schema
     assert schema.title == "DataclassPerson"
 
 
@@ -487,4 +527,4 @@ def test_file_response_media_type(content_media_type: Any, expected: Any, create
         return File("test.txt")
 
     response = create_factory(handler).create_success_response()
-    assert next(iter(response.content.values())).schema.content_media_type == expected  # type: ignore
+    assert next(iter(response.content.values())).schema.content_media_type == expected  # type: ignore[union-attr]

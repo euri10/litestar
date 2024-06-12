@@ -1,22 +1,27 @@
 from inspect import getinnerframes
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Generator, Optional
+from unittest.mock import MagicMock
 
 import pytest
-from _pytest.capture import CaptureFixture
 from pytest_mock import MockerFixture
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from structlog.testing import capture_logs
 
-from litestar import Litestar, Request, Response, get
-from litestar.exceptions import HTTPException, InternalServerException, ValidationException
+from litestar import Litestar, MediaType, Request, Response, get
+from litestar.exceptions import HTTPException, InternalServerException, LitestarException, ValidationException
+from litestar.exceptions.responses._debug_response import get_symbol_name
 from litestar.logging.config import LoggingConfig, StructLoggingConfig
-from litestar.middleware.exceptions import ExceptionHandlerMiddleware
-from litestar.middleware.exceptions._debug_response import get_symbol_name
-from litestar.middleware.exceptions.middleware import get_exception_handler
+from litestar.middleware._internal.exceptions.middleware import (
+    ExceptionHandlerMiddleware,
+    _starlette_exception_handler,
+    get_exception_handler,
+)
 from litestar.status_codes import HTTP_400_BAD_REQUEST, HTTP_500_INTERNAL_SERVER_ERROR
 from litestar.testing import TestClient, create_test_client
 from litestar.types import ExceptionHandlersMap
-from litestar.types.asgi_types import HTTPScope
+from litestar.types.asgi_types import HTTPReceiveMessage, HTTPScope, Message, Receive, Scope, Send
+from litestar.utils.scope.state import ScopeState
+from tests.helpers import cleanup_logging_impl
 
 if TYPE_CHECKING:
     from _pytest.logging import LogCaptureFixture
@@ -29,6 +34,12 @@ async def dummy_app(scope: Any, receive: Any, send: Any) -> None:
     return None
 
 
+@pytest.fixture(autouse=True)
+def cleanup_logging() -> Generator:
+    with cleanup_logging_impl():
+        yield
+
+
 @pytest.fixture()
 def app() -> Litestar:
     return Litestar()
@@ -36,7 +47,7 @@ def app() -> Litestar:
 
 @pytest.fixture()
 def middleware() -> ExceptionHandlerMiddleware:
-    return ExceptionHandlerMiddleware(dummy_app, None, {})
+    return ExceptionHandlerMiddleware(dummy_app, None)
 
 
 @pytest.fixture()
@@ -115,17 +126,24 @@ def test_default_handle_python_http_exception_handling(
 
 
 def test_exception_handler_middleware_exception_handlers_mapping() -> None:
+    mock = MagicMock()
+
     @get("/")
-    def handler() -> None:
-        ...
+    def handler(request: Request) -> None:
+        mock(ScopeState.from_scope(request.scope).exception_handlers)
 
     def exception_handler(request: Request, exc: Exception) -> Response:
         return Response(content={"an": "error"}, status_code=HTTP_500_INTERNAL_SERVER_ERROR)
 
     app = Litestar(route_handlers=[handler], exception_handlers={Exception: exception_handler}, openapi_config=None)
-    assert app.asgi_router.root_route_map_node.children["/"].asgi_handlers["GET"][0].exception_handlers == {  # type: ignore
-        Exception: exception_handler
-    }
+
+    with TestClient(app) as client:
+        client.get("/")
+        mock.assert_called_once()
+        assert mock.call_args[0][0] == {
+            Exception: exception_handler,
+            StarletteHTTPException: _starlette_exception_handler,
+        }
 
 
 def test_exception_handler_middleware_calls_app_level_after_exception_hook() -> None:
@@ -186,12 +204,10 @@ def test_exception_handler_default_logging(
         if should_log:
             assert len(caplog.records) == 1
             assert caplog.records[0].levelname == "ERROR"
-            assert caplog.records[0].message.startswith(
-                "exception raised on http connection to route /test\n\nTraceback (most recent call last):\n"
-            )
+            assert caplog.records[0].message.startswith("Uncaught exception (connection_type=http, path=/test):")
         else:
             assert not caplog.records
-            assert "exception raised on http connection request to route /test" not in response.text
+            assert "Uncaught exception" not in response.text
 
 
 @pytest.mark.parametrize(
@@ -209,7 +225,6 @@ def test_exception_handler_default_logging(
 )
 def test_exception_handler_struct_logging(
     get_logger: "GetLogger",
-    capsys: CaptureFixture,
     is_debug: bool,
     logging_config: Optional[LoggingConfig],
     should_log: bool,
@@ -232,48 +247,10 @@ def test_exception_handler_struct_logging(
             assert len(cap_logs) == 1
             assert cap_logs[0].get("connection_type") == "http"
             assert cap_logs[0].get("path") == "/test"
-            assert cap_logs[0].get("traceback")
-            assert cap_logs[0].get("event") == "uncaught exception"
+            assert cap_logs[0].get("event") == "Uncaught exception"
             assert cap_logs[0].get("log_level") == "error"
         else:
             assert not cap_logs
-
-
-def test_traceback_truncate_default_logging(
-    get_logger: "GetLogger",
-    caplog: "LogCaptureFixture",
-) -> None:
-    @get("/test")
-    def handler() -> None:
-        raise ValueError("Test debug exception")
-
-    app = Litestar([handler], logging_config=LoggingConfig(log_exceptions="always", traceback_line_limit=1))
-
-    with caplog.at_level("ERROR", "litestar"), TestClient(app=app) as client:
-        client.app.logger = get_logger("litestar")
-        response = client.get("/test")
-        assert response.status_code == HTTP_500_INTERNAL_SERVER_ERROR
-        assert "Internal Server Error" in response.text
-
-        assert len(caplog.records) == 1
-        assert caplog.records[0].levelname == "ERROR"
-        assert caplog.records[0].message == (
-            "exception raised on http connection to route /test\n\nTraceback (most recent call last):\nValueError: Test debug exception\n"
-        )
-
-
-def test_traceback_truncate_struct_logging() -> None:
-    @get("/test")
-    def handler() -> None:
-        raise ValueError("Test debug exception")
-
-    app = Litestar([handler], logging_config=StructLoggingConfig(log_exceptions="always", traceback_line_limit=1))
-
-    with TestClient(app=app) as client, capture_logs() as cap_logs:
-        response = client.get("/test")
-        assert response.status_code == HTTP_500_INTERNAL_SERVER_ERROR
-        assert len(cap_logs) == 1
-        assert cap_logs[0].get("traceback") == "ValueError: Test debug exception\n"
 
 
 def handler(_: Any, __: Any) -> Any:
@@ -312,7 +289,7 @@ def test_pdb_on_exception(mocker: MockerFixture) -> None:
     def handler() -> None:
         raise ValueError("Test debug exception")
 
-    mock_post_mortem = mocker.patch("litestar.middleware.exceptions.middleware.pdb.post_mortem")
+    mock_post_mortem = mocker.patch("litestar.middleware._internal.exceptions.middleware.pdb.post_mortem")
 
     app = Litestar([handler], pdb_on_exception=True)
 
@@ -339,9 +316,7 @@ def test_get_debug_from_scope(get_logger: "GetLogger", caplog: "LogCaptureFixtur
         assert "Test debug exception" in response.text
         assert len(caplog.records) == 1
         assert caplog.records[0].levelname == "ERROR"
-        assert caplog.records[0].message.startswith(
-            "exception raised on http connection to route /test\n\nTraceback (most recent call last):\n"
-        )
+        assert caplog.records[0].message.startswith("Uncaught exception (connection_type=http, path=/test):")
 
 
 def test_get_symbol_name_where_type_doesnt_support_bool() -> None:
@@ -362,3 +337,48 @@ def test_get_symbol_name_where_type_doesnt_support_bool() -> None:
     if exc is not None and exc.__traceback__ is not None:
         frame = getinnerframes(exc.__traceback__, 2)[-1]
         assert get_symbol_name(frame) == "Test.method"
+
+
+@pytest.mark.parametrize("media_type", list(MediaType))
+def test_serialize_custom_types(media_type: MediaType) -> None:
+    # ensure type encoders are passed down to the created response so custom types that
+    # might end up as part of a ValidationException are handled properly
+    # https://github.com/litestar-org/litestar/issues/2867
+    # https://github.com/litestar-org/litestar/issues/3192
+    class Foo:
+        def __init__(self, value: str) -> None:
+            self.value = value
+
+    @get(media_type=media_type)
+    def handler() -> None:
+        raise ValidationException(extra={"foo": Foo("bar")})
+
+    with create_test_client([handler], type_encoders={Foo: lambda f: f.value}) as client:
+        res = client.get("/")
+        assert res.json()["extra"] == {"foo": "bar"}
+
+
+async def test_exception_handler_middleware_response_already_started(scope: HTTPScope) -> None:
+    assert not ScopeState.from_scope(scope).response_started
+
+    async def mock_receive() -> HTTPReceiveMessage:  # type: ignore[empty-body]
+        pass
+
+    mock = MagicMock()
+
+    async def mock_send(message: Message) -> None:
+        mock(message)
+
+    start_message: Message = {"type": "http.response.start", "status": 200, "headers": []}
+
+    async def asgi_app(scope: Scope, receive: Receive, send: Send) -> None:
+        await send(start_message)
+        raise RuntimeError("Test exception")
+
+    mw = ExceptionHandlerMiddleware(asgi_app, None)
+
+    with pytest.raises(LitestarException):
+        await mw(scope, mock_receive, mock_send)
+
+    mock.assert_called_once_with(start_message)
+    assert ScopeState.from_scope(scope).response_started

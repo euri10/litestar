@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from litestar._openapi.schema_generation.schema import _get_type_schema_name
+from typing_extensions import TypeGuard
+
 from litestar.exceptions import MissingDependencyException
-from litestar.openapi.spec import OpenAPIType, Schema
 from litestar.plugins import OpenAPISchemaPluginProtocol
+from litestar.types import Empty
 from litestar.typing import FieldDefinition
-from litestar.utils import is_attrs_class, is_optional_union
+from litestar.utils import is_optional_union
 
 try:
     import attr
@@ -17,6 +18,7 @@ except ImportError as e:
 
 if TYPE_CHECKING:
     from litestar._openapi.schema_generation import SchemaCreator
+    from litestar.openapi.spec import Schema
 
 
 class AttrsSchemaPlugin(OpenAPISchemaPluginProtocol):
@@ -35,20 +37,28 @@ class AttrsSchemaPlugin(OpenAPISchemaPluginProtocol):
             An :class:`OpenAPI <litestar.openapi.spec.schema.Schema>` instance.
         """
 
-        unwrapped_annotation = field_definition.origin or field_definition.annotation
         type_hints = field_definition.get_type_hints(include_extras=True, resolve_generics=True)
-
-        return Schema(
+        attr_fields = attr.fields_dict(field_definition.type_)
+        return schema_creator.create_component_schema(
+            field_definition,
             required=sorted(
-                [
-                    field_name
-                    for field_name, attribute in attr.fields_dict(unwrapped_annotation).items()
-                    if attribute.default is attrs.NOTHING and not is_optional_union(type_hints[field_name])
-                ]
+                field_name
+                for field_name, attribute in attr_fields.items()
+                if attribute.default is attrs.NOTHING and not is_optional_union(type_hints[field_name])
             ),
-            properties={
-                k: schema_creator.for_field_definition(FieldDefinition.from_kwarg(v, k)) for k, v in type_hints.items()
+            property_fields={
+                field_name: FieldDefinition.from_kwarg(type_hints[field_name], field_name) for field_name in attr_fields
             },
-            type=OpenAPIType.OBJECT,
-            title=_get_type_schema_name(field_definition),
         )
+
+
+def is_attrs_class(annotation: Any) -> TypeGuard[type[attrs.AttrsInstance]]:  # pyright: ignore
+    """Given a type annotation determine if the annotation is a class that includes an attrs attribute.
+
+    Args:
+        annotation: A type.
+
+    Returns:
+        A typeguard determining whether the type is an attrs class.
+    """
+    return attrs.has(annotation) if attrs is not Empty else False  # type: ignore[comparison-overlap]

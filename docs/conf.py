@@ -38,6 +38,7 @@ extensions = [
     "sphinx_copybutton",
     "sphinxcontrib.mermaid",
     "sphinx_click",
+    "sphinx_paramlinks",
 ]
 
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
@@ -48,6 +49,7 @@ intersphinx_mapping = {
     "anyio": ("https://anyio.readthedocs.io/en/stable/", None),
     "multidict": ("https://multidict.aio-libs.org/en/stable/", None),
     "sqlalchemy": ("https://docs.sqlalchemy.org/en/20/", None),
+    "alembic": ("https://alembic.sqlalchemy.org/en/latest/", None),
     "click": ("https://click.palletsprojects.com/en/8.1.x/", None),
     "redis": ("https://redis-py.readthedocs.io/en/stable/", None),
     "picologging": ("https://microsoft.github.io/picologging", None),
@@ -55,8 +57,9 @@ intersphinx_mapping = {
     "tortoise": ("https://tortoise.github.io/", None),
     "piccolo": ("https://piccolo-orm.readthedocs.io/en/latest", None),
     "opentelemetry": ("https://opentelemetry-python.readthedocs.io/en/latest/", None),
-    "advanced-alchemy": ("https://docs.advanced-alchemy.jolt.rs/latest/", None),
+    "advanced-alchemy": ("https://docs.advanced-alchemy.litestar.dev/latest/", None),
     "jinja2": ("https://jinja.palletsprojects.com/en/latest/", None),
+    "trio": ("https://trio.readthedocs.io/en/stable/", None),
 }
 
 napoleon_google_docstring = True
@@ -86,6 +89,7 @@ nitpick_ignore = [
     (PY_CLASS, "_schema.Table"),
     (PY_CLASS, "_types.TypeDecorator"),
     (PY_CLASS, "abc.Collection"),
+    (PY_CLASS, "advanced_alchemy.utils.dataclass.Empty"),
     (PY_CLASS, "jinja2.environment.Environment"),
     (PY_CLASS, "pydantic.BaseModel"),
     (PY_CLASS, "pydantic.generics.GenericModel"),
@@ -154,17 +158,20 @@ nitpick_ignore = [
     (PY_CLASS, "litestar.typing.ParsedType"),
     (PY_METH, "litestar.dto.factory.DTOData.create_instance"),
     (PY_METH, "litestar.dto.interface.DTOInterface.data_to_encodable_type"),
+    (PY_CLASS, "MetaData"),
     (PY_CLASS, "advanced_alchemy.repository.typing.ModelT"),
     (PY_OBJ, "advanced_alchemy.config.common.SessionMakerT"),
     (PY_OBJ, "advanced_alchemy.config.common.ConnectionT"),
     (PY_CLASS, "advanced_alchemy.extensions.litestar.plugins._slots_base.SlotsBase"),
     (PY_CLASS, "advanced_alchemy.config.EngineConfig"),
+    (PY_CLASS, "advanced_alchemy.config.common.GenericAlembicConfig"),
     (PY_CLASS, "advanced_alchemy.extensions.litestar.plugins.SQLAlchemyPlugin"),
     (PY_CLASS, "advanced_alchemy.extensions.litestar.plugins.SQLAlchemySerializationPlugin"),
     (PY_CLASS, "advanced_alchemy.extensions.litestar.plugins.SQLAlchemyInitPlugin"),
     (PY_CLASS, "advanced_alchemy.extensions.litestar.config.SQLAlchemySyncConfig"),
     (PY_CLASS, "advanced_alchemy.extensions.litestar.config.SQLAlchemyAsyncConfig"),
     (PY_METH, "advanced_alchemy.extensions.litestar.plugins.SQLAlchemySerializationPlugin.create_dto_for_type"),
+    (PY_CLASS, "advanced_alchemy.base.BasicAttributes"),
     (PY_CLASS, "advanced_alchemy.config.AsyncSessionConfig"),
     (PY_CLASS, "advanced_alchemy.config.SyncSessionConfig"),
     (PY_CLASS, "advanced_alchemy.types.JsonB"),
@@ -173,6 +180,11 @@ nitpick_ignore = [
     (PY_ATTR, "advanced_alchemy.repository.AbstractAsyncRepository.id_attribute"),
     (PY_OBJ, "litestar.template.base.T_co"),
     ("py:exc", "RepositoryError"),
+    ("py:exc", "InternalServerError"),
+    ("py:exc", "HTTPExceptions"),
+    (PY_CLASS, "litestar.template.Template"),
+    (PY_CLASS, "litestar.middleware.compression.gzip_facade.GzipCompression"),
+    (PY_CLASS, "litestar.handlers.http_handlers.decorators._SubclassWarningMixin"),
 ]
 
 nitpick_ignore_regex = [
@@ -200,6 +212,7 @@ nitpick_ignore_regex = [
     (PY_RE, r"advanced_alchemy.*\.T"),
     (PY_RE, r"advanced_alchemy\.config.common\.EngineT"),
     (PY_RE, r"advanced_alchemy\.config.common\.SessionT"),
+    (PY_RE, r".*R"),
 ]
 
 # Warnings about missing references to those targets in the specified location will be ignored.
@@ -212,6 +225,7 @@ ignore_missing_refs = {
     "litestar.template": {"litestar.template.base.T_co"},
     "litestar.openapi.OpenAPIController.security": {"SecurityRequirement"},
     "litestar.response.file.async_file_iterator": {"FileSystemAdapter"},
+    "advanced_alchemy._listeners.touch_updated_timestamp": {"Session"},
     re.compile("litestar.response.redirect.*"): {"RedirectStatusType"},
     re.compile(r"litestar\.plugins.*"): re.compile(".*ModelT"),
     re.compile(r"litestar\.(contrib|repository)\.*"): re.compile(".*T"),
@@ -219,6 +233,10 @@ ignore_missing_refs = {
         ".*(ConnectionT|EngineT|SessionT|SessionMakerT|SlotsBase)"
     ),
     re.compile(r"litestar\.dto.*"): re.compile(".*T|.*FieldDefinition|Empty"),
+    re.compile(r"litestar\.template\.(config|TemplateConfig).*"): re.compile(".*EngineType"),
+    "litestar.concurrency.set_asyncio_executor": {"ThreadPoolExecutor"},
+    "litestar.concurrency.get_asyncio_executor": {"ThreadPoolExecutor"},
+    re.compile(r"litestar\.channels\.backends\.asyncpg.*"): {"asyncpg.connection.Connection"},
 }
 
 # Do not warn about broken links to the following:
@@ -294,7 +312,7 @@ html_theme_options = {
         "Help": {
             "Discord Help Forum": {
                 "description": "Dedicated Discord help forum",
-                "link": "https://discord.gg/litestar-919193495116337154",
+                "link": "https://discord.gg/litestar",
                 "icon": "coc",
             },
             "GitHub Discussions": {

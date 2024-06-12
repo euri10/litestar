@@ -39,8 +39,7 @@ def _create_default_route_handler(
 ) -> HTTPRouteHandler:
     handler_decorator = _decorator_http_method_map[http_method]
 
-    def _default_route_handler() -> None:
-        ...
+    def _default_route_handler() -> None: ...
 
     handler = handler_decorator("/", sync_to_thread=False, **(handler_kwargs or {}))(_default_route_handler)
     handler.owner = app
@@ -301,7 +300,9 @@ class RequestFactory:
             headers.update(encoding_headers)
             for chunk in stream:
                 body += chunk
-        ScopeState.from_scope(scope).body = body
+        scope_state = ScopeState.from_scope(scope)
+        scope_state.body = body
+        scope_state.exception_handlers = scope["route_handler"].resolve_exception_handlers()
         self._create_cookie_header(headers, cookies)
         scope["headers"] = self._build_headers(headers)
         return Request(scope=scope)

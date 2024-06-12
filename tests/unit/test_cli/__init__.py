@@ -76,3 +76,35 @@ def create_app() -> Litestar:
     return Litestar(route_handlers=[], plugins=[StartupPrintPlugin()])
 
 """
+APP_FILE_CONTENT_ROUTES_EXAMPLE = """
+from litestar import Litestar, get
+from litestar.openapi import OpenAPIConfig
+from typing import Dict
+
+
+@get("/")
+def hello_world() -> Dict[str, str]:
+    return {"hello": "world"}
+
+
+@get("/foo")
+def foo() -> str:
+    return "bar"
+
+
+@get("/schema/all/foo/bar/schema/")
+def long_api() -> Dict[str, str]:
+    return {"test": "api"}
+
+
+
+app = Litestar(
+    openapi_config=OpenAPIConfig(
+        title="test_app",
+        version="0",
+        path="/api-docs",
+    ),
+    route_handlers=[hello_world, foo, long_api]
+)
+
+"""

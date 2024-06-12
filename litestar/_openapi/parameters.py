@@ -81,7 +81,7 @@ class ParameterFactory:
         self,
         context: OpenAPIContext,
         route_handler: BaseRouteHandler,
-        path_parameters: tuple[PathParameterDefinition, ...],
+        path_parameters: dict[str, PathParameterDefinition],
     ) -> None:
         """Initialize ParameterFactory.
 
@@ -96,7 +96,7 @@ class ParameterFactory:
         self.parameters = ParameterCollection(route_handler)
         self.dependency_providers = route_handler.resolve_dependencies()
         self.layered_parameters = route_handler.resolve_layered_parameters()
-        self.path_parameters_names = {p.name for p in path_parameters}
+        self.path_parameters = path_parameters
 
     def create_parameter(self, field_definition: FieldDefinition, parameter_name: str) -> Parameter:
         """Create an OpenAPI Parameter instance for a field definition.
@@ -111,7 +111,7 @@ class ParameterFactory:
             field_definition.kwarg_definition if isinstance(field_definition.kwarg_definition, ParameterKwarg) else None
         )
 
-        if parameter_name in self.path_parameters_names:
+        if parameter_name in self.path_parameters:
             param_in = ParamType.PATH
             is_required = True
             result = self.schema_creator.for_field_definition(field_definition)
@@ -131,7 +131,7 @@ class ParameterFactory:
         if not result:
             result = self.schema_creator.for_field_definition(field_definition)
 
-        schema = result if isinstance(result, Schema) else self.context.schemas[result.value]
+        schema = result if isinstance(result, Schema) else self.context.schema_registry.from_reference(result).schema
 
         examples_list = kwarg_definition.examples or [] if kwarg_definition else []
         examples = get_formatted_examples(field_definition, examples_list)
@@ -215,6 +215,21 @@ class ParameterFactory:
     def create_parameters_for_handler(self) -> list[Parameter]:
         """Create a list of path/query/header Parameter models for the given PathHandler."""
         handler_fields = self.route_handler.parsed_fn_signature.parameters
+        # not all path parameters have to be consumed by the handler. Because even not
+        # consumed path parameters must still be specified, we create stub parameters
+        # for the unconsumed ones so a correct OpenAPI schema can be generated
+        dependency_fields = {
+            name for dep in self.dependency_providers.values() for name in dep.parsed_fn_signature.parameters
+        }
+        params_not_consumed_by_handler = set(self.path_parameters) - handler_fields.keys()
+        unconsumed_path_parameters = params_not_consumed_by_handler - dependency_fields
+        handler_fields.update(
+            {
+                param_name: FieldDefinition.from_kwarg(self.path_parameters[param_name].type, name=param_name)
+                for param_name in unconsumed_path_parameters
+            }
+        )
+
         self.create_parameters_for_field_definitions(handler_fields)
         return self.parameters.list()
 
@@ -222,7 +237,7 @@ class ParameterFactory:
 def create_parameters_for_handler(
     context: OpenAPIContext,
     route_handler: BaseRouteHandler,
-    path_parameters: tuple[PathParameterDefinition, ...],
+    path_parameters: dict[str, PathParameterDefinition],
 ) -> list[Parameter]:
     """Create a list of path/query/header Parameter models for the given PathHandler."""
     factory = ParameterFactory(

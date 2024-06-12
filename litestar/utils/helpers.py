@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import Enum
 from functools import partial
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, TypeVar, cast
 from urllib.parse import quote
 
 from litestar.utils.typing import get_origin_or_inner_type
@@ -23,7 +23,7 @@ __all__ = (
 T = TypeVar("T")
 
 
-def get_name(value: Any) -> str:
+def get_name(value: object) -> str:
     """Get the ``__name__`` of an object.
 
     Args:
@@ -55,7 +55,7 @@ def get_enum_string_value(value: Enum | str) -> str:
     Returns:
         A string.
     """
-    return value.value if isinstance(value, Enum) else value  # type:ignore
+    return value.value if isinstance(value, Enum) else value  # type: ignore[no-any-return]
 
 
 def unwrap_partial(value: MaybePartial[T]) -> T:
@@ -98,6 +98,6 @@ def get_exception_group() -> type[BaseException]:
     try:
         return cast("type[BaseException]", ExceptionGroup)  # type:ignore[name-defined]
     except NameError:
-        from exceptiongroup import ExceptionGroup as _ExceptionGroup
+        from exceptiongroup import ExceptionGroup as _ExceptionGroup  # pyright: ignore
 
         return cast("type[BaseException]", _ExceptionGroup)

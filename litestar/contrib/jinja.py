@@ -17,7 +17,7 @@ try:
     from jinja2 import Environment, FileSystemLoader, pass_context
     from jinja2 import TemplateNotFound as JinjaTemplateNotFound
 except ImportError as e:
-    raise MissingDependencyException("jinja2") from e
+    raise MissingDependencyException("jinja2", extra="jinja") from e
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -45,7 +45,6 @@ class JinjaTemplateEngine(TemplateEngineProtocol["JinjaTemplate", Mapping[str, A
             engine_instance: A jinja Environment instance.
         """
 
-        super().__init__(directory, engine_instance)
         if directory and engine_instance:
             raise ImproperlyConfiguredException("You must provide either a directory or a jinja2 Environment instance.")
         if directory:

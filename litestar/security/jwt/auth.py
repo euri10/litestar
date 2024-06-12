@@ -58,7 +58,7 @@ class BaseJWTAuth(Generic[UserType], AbstractSecurityConfig[UserType, Token]):
     """The value to use for the OpenAPI security scheme and security requirements."""
     description: str
     """Description for the OpenAPI security scheme."""
-    authentication_middleware_class: type[JWTAuthenticationMiddleware]
+    authentication_middleware_class: type[JWTAuthenticationMiddleware]  # pyright: ignore
     """The authentication middleware class to use.
 
     Must inherit from :class:`JWTAuthenticationMiddleware`
@@ -212,7 +212,7 @@ class BaseJWTAuth(Generic[UserType], AbstractSecurityConfig[UserType, Token]):
         Returns:
             The encoded token formatted for the HTTP headers
         """
-        security = self.openapi_components.security_schemes.get(self.openapi_security_scheme_name, None)  # type: ignore
+        security = self.openapi_components.security_schemes.get(self.openapi_security_scheme_name, None)  # type: ignore[union-attr]
         return f"{security.scheme} {encoded_token}" if isinstance(security, SecurityScheme) else encoded_token
 
 
@@ -352,7 +352,7 @@ class JWTCookieAuth(Generic[UserType], BaseJWTAuth[UserType]):
     """Controls whether or not a cookie is sent with cross-site requests. Defaults to ``lax``. """
     description: str = field(default="JWT cookie-based authentication and authorization.")
     """Description for the OpenAPI security scheme."""
-    authentication_middleware_class: type[JWTCookieAuthenticationMiddleware] = field(
+    authentication_middleware_class: type[JWTCookieAuthenticationMiddleware] = field(  # pyright: ignore
         default=JWTCookieAuthenticationMiddleware
     )
     """The authentication middleware class to use. Must inherit from :class:`JWTCookieAuthenticationMiddleware`
@@ -556,7 +556,7 @@ class OAuth2PasswordBearerAuth(Generic[UserType], BaseJWTAuth[UserType]):
     """Controls whether or not a cookie is sent with cross-site requests. Defaults to ``lax``. """
     description: str = field(default="OAUTH2 password bearer authentication and authorization.")
     """Description for the OpenAPI security scheme."""
-    authentication_middleware_class: type[JWTCookieAuthenticationMiddleware] = field(
+    authentication_middleware_class: type[JWTCookieAuthenticationMiddleware] = field(  # pyright: ignore
         default=JWTCookieAuthenticationMiddleware
     )
     """The authentication middleware class to use.

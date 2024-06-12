@@ -16,7 +16,7 @@ from litestar.status_codes import HTTP_500_INTERNAL_SERVER_ERROR
 try:
     import prometheus_client  # noqa: F401
 except ImportError as e:
-    raise MissingDependencyException("prometheus_client") from e
+    raise MissingDependencyException("prometheus_client", "prometheus-client", "prometheus") from e
 
 from prometheus_client import Counter, Gauge, Histogram
 
@@ -115,9 +115,20 @@ class PrometheusMiddleware(AbstractMiddleware):
             A dictionary of default labels.
         """
 
+        path = request.url.path
+        if self._config.group_path:
+            path_parts = path.split("/")[1:]
+            path = ""
+            for path_parameter, path_parameter_value in request.scope.get("path_params", {}).items():
+                for path_part in path_parts:
+                    path_parameter_value = str(path_parameter_value)
+                    if path_part == path_parameter_value:
+                        path += f"/{{{path_parameter}}}"
+                    else:
+                        path += f"/{path_part}"
         return {
             "method": request.method if request.scope["type"] == ScopeType.HTTP else request.scope["type"],
-            "path": request.url.path,
+            "path": path,
             "status_code": 200,
             "app_name": self._config.app_name,
         }

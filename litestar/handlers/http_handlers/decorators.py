@@ -1,26 +1,29 @@
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING
 
 from litestar.enums import HttpMethod, MediaType
 from litestar.exceptions import HTTPException, ImproperlyConfiguredException
 from litestar.openapi.spec import Operation
 from litestar.response.file import ASGIFileResponse, File
+from litestar.types import Empty, TypeDecodersSequence
 from litestar.types.builtin_types import NoneType
-from litestar.types.empty import Empty
 from litestar.utils import is_class_and_subclass
 
 from .base import HTTPRouteHandler
 
 if TYPE_CHECKING:
-    from typing import Any, Mapping
+    from typing import Any, Mapping, Sequence
 
     from litestar.background_tasks import BackgroundTask, BackgroundTasks
     from litestar.config.response_cache import CACHE_FOREVER
+    from litestar.connection import Request
     from litestar.datastructures import CacheControlHeader, ETag
     from litestar.dto import AbstractDTO
     from litestar.openapi.datastructures import ResponseSpec
     from litestar.openapi.spec import SecurityRequirement
+    from litestar.response import Response
     from litestar.types import (
         AfterRequestHookHandler,
         AfterResponseHookHandler,
@@ -33,7 +36,6 @@ if TYPE_CHECKING:
         Middleware,
         ResponseCookies,
         ResponseHeaders,
-        ResponseType,
         TypeEncodersMap,
     )
     from litestar.types.callable_types import OperationIDCreator
@@ -44,7 +46,17 @@ __all__ = ("get", "head", "post", "put", "patch", "delete")
 MSG_SEMANTIC_ROUTE_HANDLER_WITH_HTTP = "semantic route handlers cannot define http_method"
 
 
-class delete(HTTPRouteHandler):
+class _SubclassWarningMixin:
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        warnings.warn(
+            "Semantic HTTP route handler classes are deprecated and will be replaced by "
+            "functional decorators in Litestar 3.0.",
+            category=DeprecationWarning,
+            stacklevel=2,
+        )
+
+
+class delete(HTTPRouteHandler, _SubclassWarningMixin):
     """DELETE Route Decorator.
 
     Use this decorator to decorate an HTTP handler for DELETE requests.
@@ -52,7 +64,7 @@ class delete(HTTPRouteHandler):
 
     def __init__(
         self,
-        path: str | None | list[str] | None = None,
+        path: str | None | Sequence[str] = None,
         *,
         after_request: AfterRequestHookHandler | None = None,
         after_response: AfterResponseHookHandler | None = None,
@@ -65,12 +77,13 @@ class delete(HTTPRouteHandler):
         dto: type[AbstractDTO] | None | EmptyType = Empty,
         etag: ETag | None = None,
         exception_handlers: ExceptionHandlersMap | None = None,
-        guards: list[Guard] | None = None,
+        guards: Sequence[Guard] | None = None,
         media_type: MediaType | str | None = None,
-        middleware: list[Middleware] | None = None,
+        middleware: Sequence[Middleware] | None = None,
         name: str | None = None,
-        opt: dict[str, Any] | None = None,
-        response_class: ResponseType | None = None,
+        opt: Mapping[str, Any] | None = None,
+        request_class: type[Request] | None = None,
+        response_class: type[Response] | None = None,
         response_cookies: ResponseCookies | None = None,
         response_headers: ResponseHeaders | None = None,
         return_dto: type[AbstractDTO] | None | EmptyType = Empty,
@@ -85,12 +98,13 @@ class delete(HTTPRouteHandler):
         include_in_schema: bool | EmptyType = Empty,
         operation_class: type[Operation] = Operation,
         operation_id: str | OperationIDCreator | None = None,
-        raises: list[type[HTTPException]] | None = None,
+        raises: Sequence[type[HTTPException]] | None = None,
         response_description: str | None = None,
-        responses: dict[int, ResponseSpec] | None = None,
-        security: list[SecurityRequirement] | None = None,
+        responses: Mapping[int, ResponseSpec] | None = None,
+        security: Sequence[SecurityRequirement] | None = None,
         summary: str | None = None,
-        tags: list[str] | None = None,
+        tags: Sequence[str] | None = None,
+        type_decoders: TypeDecodersSequence | None = None,
         type_encoders: TypeEncodersMap | None = None,
         **kwargs: Any,
     ) -> None:
@@ -131,6 +145,8 @@ class delete(HTTPRouteHandler):
             name: A string identifying the route handler.
             opt: A string keyed mapping of arbitrary values that can be accessed in :class:`Guards <.types.Guard>` or
                 wherever you have access to :class:`Request <.connection.Request>` or :class:`ASGI Scope <.types.Scope>`.
+            request_class: A custom subclass of :class:`Request <.connection.Request>` to be used as route handler's
+                default request.
             response_class: A custom subclass of :class:`Response <.response.Response>` to be used as route handler's
                 default response.
             response_cookies: A sequence of :class:`Cookie <.datastructures.Cookie>` instances.
@@ -159,6 +175,8 @@ class delete(HTTPRouteHandler):
             security: A sequence of dictionaries that contain information about which security scheme can be used on the endpoint.
             summary: Text used for the route's schema summary section.
             tags: A sequence of string tags that will be appended to the OpenAPI schema.
+            type_decoders: A sequence of tuples, each composed of a predicate testing for type identity and a msgspec
+                hook for deserialization.
             type_encoders: A mapping of types to callables that transform them into types supported for serialization.
             **kwargs: Any additional kwarg - will be set in the opt dictionary.
         """
@@ -191,6 +209,7 @@ class delete(HTTPRouteHandler):
             opt=opt,
             path=path,
             raises=raises,
+            request_class=request_class,
             response_class=response_class,
             response_cookies=response_cookies,
             response_description=response_description,
@@ -203,12 +222,13 @@ class delete(HTTPRouteHandler):
             summary=summary,
             sync_to_thread=sync_to_thread,
             tags=tags,
+            type_decoders=type_decoders,
             type_encoders=type_encoders,
             **kwargs,
         )
 
 
-class get(HTTPRouteHandler):
+class get(HTTPRouteHandler, _SubclassWarningMixin):
     """GET Route Decorator.
 
     Use this decorator to decorate an HTTP handler for GET requests.
@@ -216,7 +236,7 @@ class get(HTTPRouteHandler):
 
     def __init__(
         self,
-        path: str | None | list[str] | None = None,
+        path: str | None | Sequence[str] = None,
         *,
         after_request: AfterRequestHookHandler | None = None,
         after_response: AfterResponseHookHandler | None = None,
@@ -229,12 +249,13 @@ class get(HTTPRouteHandler):
         dto: type[AbstractDTO] | None | EmptyType = Empty,
         etag: ETag | None = None,
         exception_handlers: ExceptionHandlersMap | None = None,
-        guards: list[Guard] | None = None,
+        guards: Sequence[Guard] | None = None,
         media_type: MediaType | str | None = None,
-        middleware: list[Middleware] | None = None,
+        middleware: Sequence[Middleware] | None = None,
         name: str | None = None,
-        opt: dict[str, Any] | None = None,
-        response_class: ResponseType | None = None,
+        opt: Mapping[str, Any] | None = None,
+        request_class: type[Request] | None = None,
+        response_class: type[Response] | None = None,
         response_cookies: ResponseCookies | None = None,
         response_headers: ResponseHeaders | None = None,
         return_dto: type[AbstractDTO] | None | EmptyType = Empty,
@@ -249,12 +270,13 @@ class get(HTTPRouteHandler):
         include_in_schema: bool | EmptyType = Empty,
         operation_class: type[Operation] = Operation,
         operation_id: str | OperationIDCreator | None = None,
-        raises: list[type[HTTPException]] | None = None,
+        raises: Sequence[type[HTTPException]] | None = None,
         response_description: str | None = None,
-        responses: dict[int, ResponseSpec] | None = None,
-        security: list[SecurityRequirement] | None = None,
+        responses: Mapping[int, ResponseSpec] | None = None,
+        security: Sequence[SecurityRequirement] | None = None,
         summary: str | None = None,
-        tags: list[str] | None = None,
+        tags: Sequence[str] | None = None,
+        type_decoders: TypeDecodersSequence | None = None,
         type_encoders: TypeEncodersMap | None = None,
         **kwargs: Any,
     ) -> None:
@@ -295,6 +317,8 @@ class get(HTTPRouteHandler):
             name: A string identifying the route handler.
             opt: A string keyed mapping of arbitrary values that can be accessed in :class:`Guards <.types.Guard>` or
                 wherever you have access to :class:`Request <.connection.Request>` or :class:`ASGI Scope <.types.Scope>`.
+            request_class: A custom subclass of :class:`Request <.connection.Request>` to be used as route handler's
+                default request.
             response_class: A custom subclass of :class:`Response <.response.Response>` to be used as route handler's
                 default response.
             response_cookies: A sequence of :class:`Cookie <.datastructures.Cookie>` instances.
@@ -323,6 +347,8 @@ class get(HTTPRouteHandler):
             security: A sequence of dictionaries that contain information about which security scheme can be used on the endpoint.
             summary: Text used for the route's schema summary section.
             tags: A sequence of string tags that will be appended to the OpenAPI schema.
+            type_decoders: A sequence of tuples, each composed of a predicate testing for type identity and a msgspec
+                hook for deserialization.
             type_encoders: A mapping of types to callables that transform them into types supported for serialization.
             **kwargs: Any additional kwarg - will be set in the opt dictionary.
         """
@@ -356,6 +382,7 @@ class get(HTTPRouteHandler):
             opt=opt,
             path=path,
             raises=raises,
+            request_class=request_class,
             response_class=response_class,
             response_cookies=response_cookies,
             response_description=response_description,
@@ -368,12 +395,13 @@ class get(HTTPRouteHandler):
             summary=summary,
             sync_to_thread=sync_to_thread,
             tags=tags,
+            type_decoders=type_decoders,
             type_encoders=type_encoders,
             **kwargs,
         )
 
 
-class head(HTTPRouteHandler):
+class head(HTTPRouteHandler, _SubclassWarningMixin):
     """HEAD Route Decorator.
 
     Use this decorator to decorate an HTTP handler for HEAD requests.
@@ -381,7 +409,7 @@ class head(HTTPRouteHandler):
 
     def __init__(
         self,
-        path: str | None | list[str] | None = None,
+        path: str | None | Sequence[str] = None,
         *,
         after_request: AfterRequestHookHandler | None = None,
         after_response: AfterResponseHookHandler | None = None,
@@ -394,12 +422,13 @@ class head(HTTPRouteHandler):
         dto: type[AbstractDTO] | None | EmptyType = Empty,
         etag: ETag | None = None,
         exception_handlers: ExceptionHandlersMap | None = None,
-        guards: list[Guard] | None = None,
+        guards: Sequence[Guard] | None = None,
         media_type: MediaType | str | None = None,
-        middleware: list[Middleware] | None = None,
+        middleware: Sequence[Middleware] | None = None,
         name: str | None = None,
-        opt: dict[str, Any] | None = None,
-        response_class: ResponseType | None = None,
+        opt: Mapping[str, Any] | None = None,
+        request_class: type[Request] | None = None,
+        response_class: type[Response] | None = None,
         response_cookies: ResponseCookies | None = None,
         response_headers: ResponseHeaders | None = None,
         signature_namespace: Mapping[str, Any] | None = None,
@@ -413,13 +442,14 @@ class head(HTTPRouteHandler):
         include_in_schema: bool | EmptyType = Empty,
         operation_class: type[Operation] = Operation,
         operation_id: str | OperationIDCreator | None = None,
-        raises: list[type[HTTPException]] | None = None,
+        raises: Sequence[type[HTTPException]] | None = None,
         response_description: str | None = None,
-        responses: dict[int, ResponseSpec] | None = None,
+        responses: Mapping[int, ResponseSpec] | None = None,
         return_dto: type[AbstractDTO] | None | EmptyType = Empty,
-        security: list[SecurityRequirement] | None = None,
+        security: Sequence[SecurityRequirement] | None = None,
         summary: str | None = None,
-        tags: list[str] | None = None,
+        tags: Sequence[str] | None = None,
+        type_decoders: TypeDecodersSequence | None = None,
         type_encoders: TypeEncodersMap | None = None,
         **kwargs: Any,
     ) -> None:
@@ -464,6 +494,8 @@ class head(HTTPRouteHandler):
             name: A string identifying the route handler.
             opt: A string keyed mapping of arbitrary values that can be accessed in :class:`Guards <.types.Guard>` or
                 wherever you have access to :class:`Request <.connection.Request>` or :class:`ASGI Scope <.types.Scope>`.
+            request_class: A custom subclass of :class:`Request <.connection.Request>` to be used as route handler's
+                default request.
             response_class: A custom subclass of :class:`Response <.response.Response>` to be used as route handler's
                 default response.
             response_cookies: A sequence of :class:`Cookie <.datastructures.Cookie>` instances.
@@ -492,6 +524,8 @@ class head(HTTPRouteHandler):
             security: A sequence of dictionaries that contain information about which security scheme can be used on the endpoint.
             summary: Text used for the route's schema summary section.
             tags: A sequence of string tags that will be appended to the OpenAPI schema.
+            type_decoders: A sequence of tuples, each composed of a predicate testing for type identity and a msgspec
+                hook for deserialization.
             type_encoders: A mapping of types to callables that transform them into types supported for serialization.
             **kwargs: Any additional kwarg - will be set in the opt dictionary.
         """
@@ -525,6 +559,7 @@ class head(HTTPRouteHandler):
             opt=opt,
             path=path,
             raises=raises,
+            request_class=request_class,
             response_class=response_class,
             response_cookies=response_cookies,
             response_description=response_description,
@@ -537,6 +572,7 @@ class head(HTTPRouteHandler):
             summary=summary,
             sync_to_thread=sync_to_thread,
             tags=tags,
+            type_decoders=type_decoders,
             type_encoders=type_encoders,
             **kwargs,
         )
@@ -555,7 +591,7 @@ class head(HTTPRouteHandler):
             raise ImproperlyConfiguredException("A response to a head request should not have a body")
 
 
-class patch(HTTPRouteHandler):
+class patch(HTTPRouteHandler, _SubclassWarningMixin):
     """PATCH Route Decorator.
 
     Use this decorator to decorate an HTTP handler for PATCH requests.
@@ -563,7 +599,7 @@ class patch(HTTPRouteHandler):
 
     def __init__(
         self,
-        path: str | None | list[str] | None = None,
+        path: str | None | Sequence[str] = None,
         *,
         after_request: AfterRequestHookHandler | None = None,
         after_response: AfterResponseHookHandler | None = None,
@@ -576,12 +612,13 @@ class patch(HTTPRouteHandler):
         dto: type[AbstractDTO] | None | EmptyType = Empty,
         etag: ETag | None = None,
         exception_handlers: ExceptionHandlersMap | None = None,
-        guards: list[Guard] | None = None,
+        guards: Sequence[Guard] | None = None,
         media_type: MediaType | str | None = None,
-        middleware: list[Middleware] | None = None,
+        middleware: Sequence[Middleware] | None = None,
         name: str | None = None,
-        opt: dict[str, Any] | None = None,
-        response_class: ResponseType | None = None,
+        opt: Mapping[str, Any] | None = None,
+        request_class: type[Request] | None = None,
+        response_class: type[Response] | None = None,
         response_cookies: ResponseCookies | None = None,
         response_headers: ResponseHeaders | None = None,
         return_dto: type[AbstractDTO] | None | EmptyType = Empty,
@@ -596,12 +633,13 @@ class patch(HTTPRouteHandler):
         include_in_schema: bool | EmptyType = Empty,
         operation_class: type[Operation] = Operation,
         operation_id: str | OperationIDCreator | None = None,
-        raises: list[type[HTTPException]] | None = None,
+        raises: Sequence[type[HTTPException]] | None = None,
         response_description: str | None = None,
-        responses: dict[int, ResponseSpec] | None = None,
-        security: list[SecurityRequirement] | None = None,
+        responses: Mapping[int, ResponseSpec] | None = None,
+        security: Sequence[SecurityRequirement] | None = None,
         summary: str | None = None,
-        tags: list[str] | None = None,
+        tags: Sequence[str] | None = None,
+        type_decoders: TypeDecodersSequence | None = None,
         type_encoders: TypeEncodersMap | None = None,
         **kwargs: Any,
     ) -> None:
@@ -642,6 +680,8 @@ class patch(HTTPRouteHandler):
             name: A string identifying the route handler.
             opt: A string keyed mapping of arbitrary values that can be accessed in :class:`Guards <.types.Guard>` or
                 wherever you have access to :class:`Request <.connection.Request>` or :class:`ASGI Scope <.types.Scope>`.
+            request_class: A custom subclass of :class:`Request <.connection.Request>` to be used as route handler's
+                default request.
             response_class: A custom subclass of :class:`Response <.response.Response>` to be used as route handler's
                 default response.
             response_cookies: A sequence of :class:`Cookie <.datastructures.Cookie>` instances.
@@ -670,6 +710,8 @@ class patch(HTTPRouteHandler):
             security: A sequence of dictionaries that contain information about which security scheme can be used on the endpoint.
             summary: Text used for the route's schema summary section.
             tags: A sequence of string tags that will be appended to the OpenAPI schema.
+            type_decoders: A sequence of tuples, each composed of a predicate testing for type identity and a msgspec
+                hook for deserialization.
             type_encoders: A mapping of types to callables that transform them into types supported for serialization.
             **kwargs: Any additional kwarg - will be set in the opt dictionary.
         """
@@ -702,6 +744,7 @@ class patch(HTTPRouteHandler):
             opt=opt,
             path=path,
             raises=raises,
+            request_class=request_class,
             response_class=response_class,
             response_cookies=response_cookies,
             response_description=response_description,
@@ -714,12 +757,13 @@ class patch(HTTPRouteHandler):
             summary=summary,
             sync_to_thread=sync_to_thread,
             tags=tags,
+            type_decoders=type_decoders,
             type_encoders=type_encoders,
             **kwargs,
         )
 
 
-class post(HTTPRouteHandler):
+class post(HTTPRouteHandler, _SubclassWarningMixin):
     """POST Route Decorator.
 
     Use this decorator to decorate an HTTP handler for POST requests.
@@ -727,7 +771,7 @@ class post(HTTPRouteHandler):
 
     def __init__(
         self,
-        path: str | None | list[str] | None = None,
+        path: str | None | Sequence[str] = None,
         *,
         after_request: AfterRequestHookHandler | None = None,
         after_response: AfterResponseHookHandler | None = None,
@@ -740,12 +784,13 @@ class post(HTTPRouteHandler):
         dto: type[AbstractDTO] | None | EmptyType = Empty,
         etag: ETag | None = None,
         exception_handlers: ExceptionHandlersMap | None = None,
-        guards: list[Guard] | None = None,
+        guards: Sequence[Guard] | None = None,
         media_type: MediaType | str | None = None,
-        middleware: list[Middleware] | None = None,
+        middleware: Sequence[Middleware] | None = None,
         name: str | None = None,
-        opt: dict[str, Any] | None = None,
-        response_class: ResponseType | None = None,
+        opt: Mapping[str, Any] | None = None,
+        request_class: type[Request] | None = None,
+        response_class: type[Response] | None = None,
         response_cookies: ResponseCookies | None = None,
         response_headers: ResponseHeaders | None = None,
         return_dto: type[AbstractDTO] | None | EmptyType = Empty,
@@ -760,12 +805,13 @@ class post(HTTPRouteHandler):
         include_in_schema: bool | EmptyType = Empty,
         operation_class: type[Operation] = Operation,
         operation_id: str | OperationIDCreator | None = None,
-        raises: list[type[HTTPException]] | None = None,
+        raises: Sequence[type[HTTPException]] | None = None,
         response_description: str | None = None,
-        responses: dict[int, ResponseSpec] | None = None,
-        security: list[SecurityRequirement] | None = None,
+        responses: Mapping[int, ResponseSpec] | None = None,
+        security: Sequence[SecurityRequirement] | None = None,
         summary: str | None = None,
-        tags: list[str] | None = None,
+        tags: Sequence[str] | None = None,
+        type_decoders: TypeDecodersSequence | None = None,
         type_encoders: TypeEncodersMap | None = None,
         **kwargs: Any,
     ) -> None:
@@ -806,6 +852,8 @@ class post(HTTPRouteHandler):
             name: A string identifying the route handler.
             opt: A string keyed mapping of arbitrary values that can be accessed in :class:`Guards <.types.Guard>` or
                 wherever you have access to :class:`Request <.connection.Request>` or :class:`ASGI Scope <.types.Scope>`.
+            request_class: A custom subclass of :class:`Request <.connection.Request>` to be used as route handler's
+                default request.
             response_class: A custom subclass of :class:`Response <.response.Response>` to be used as route handler's
                 default response.
             response_cookies: A sequence of :class:`Cookie <.datastructures.Cookie>` instances.
@@ -834,6 +882,8 @@ class post(HTTPRouteHandler):
             security: A sequence of dictionaries that contain information about which security scheme can be used on the endpoint.
             summary: Text used for the route's schema summary section.
             tags: A sequence of string tags that will be appended to the OpenAPI schema.
+            type_decoders: A sequence of tuples, each composed of a predicate testing for type identity and a msgspec
+                hook for deserialization.
             type_encoders: A mapping of types to callables that transform them into types supported for serialization.
             **kwargs: Any additional kwarg - will be set in the opt dictionary.
         """
@@ -866,6 +916,7 @@ class post(HTTPRouteHandler):
             opt=opt,
             path=path,
             raises=raises,
+            request_class=request_class,
             response_class=response_class,
             response_cookies=response_cookies,
             response_description=response_description,
@@ -878,12 +929,13 @@ class post(HTTPRouteHandler):
             summary=summary,
             sync_to_thread=sync_to_thread,
             tags=tags,
+            type_decoders=type_decoders,
             type_encoders=type_encoders,
             **kwargs,
         )
 
 
-class put(HTTPRouteHandler):
+class put(HTTPRouteHandler, _SubclassWarningMixin):
     """PUT Route Decorator.
 
     Use this decorator to decorate an HTTP handler for PUT requests.
@@ -891,7 +943,7 @@ class put(HTTPRouteHandler):
 
     def __init__(
         self,
-        path: str | None | list[str] | None = None,
+        path: str | None | Sequence[str] = None,
         *,
         after_request: AfterRequestHookHandler | None = None,
         after_response: AfterResponseHookHandler | None = None,
@@ -904,12 +956,13 @@ class put(HTTPRouteHandler):
         dto: type[AbstractDTO] | None | EmptyType = Empty,
         etag: ETag | None = None,
         exception_handlers: ExceptionHandlersMap | None = None,
-        guards: list[Guard] | None = None,
+        guards: Sequence[Guard] | None = None,
         media_type: MediaType | str | None = None,
-        middleware: list[Middleware] | None = None,
+        middleware: Sequence[Middleware] | None = None,
         name: str | None = None,
-        opt: dict[str, Any] | None = None,
-        response_class: ResponseType | None = None,
+        opt: Mapping[str, Any] | None = None,
+        request_class: type[Request] | None = None,
+        response_class: type[Response] | None = None,
         response_cookies: ResponseCookies | None = None,
         response_headers: ResponseHeaders | None = None,
         return_dto: type[AbstractDTO] | None | EmptyType = Empty,
@@ -924,12 +977,13 @@ class put(HTTPRouteHandler):
         include_in_schema: bool | EmptyType = Empty,
         operation_class: type[Operation] = Operation,
         operation_id: str | OperationIDCreator | None = None,
-        raises: list[type[HTTPException]] | None = None,
+        raises: Sequence[type[HTTPException]] | None = None,
         response_description: str | None = None,
-        responses: dict[int, ResponseSpec] | None = None,
-        security: list[SecurityRequirement] | None = None,
+        responses: Mapping[int, ResponseSpec] | None = None,
+        security: Sequence[SecurityRequirement] | None = None,
         summary: str | None = None,
-        tags: list[str] | None = None,
+        tags: Sequence[str] | None = None,
+        type_decoders: TypeDecodersSequence | None = None,
         type_encoders: TypeEncodersMap | None = None,
         **kwargs: Any,
     ) -> None:
@@ -970,6 +1024,8 @@ class put(HTTPRouteHandler):
             name: A string identifying the route handler.
             opt: A string keyed mapping of arbitrary values that can be accessed in :class:`Guards <.types.Guard>` or
                 wherever you have access to :class:`Request <.connection.Request>` or :class:`ASGI Scope <.types.Scope>`.
+            request_class: A custom subclass of :class:`Request <.connection.Request>` to be used as route handler's
+                default request.
             response_class: A custom subclass of :class:`Response <.response.Response>` to be used as route handler's
                 default response.
             response_cookies: A sequence of :class:`Cookie <.datastructures.Cookie>` instances.
@@ -998,6 +1054,8 @@ class put(HTTPRouteHandler):
             security: A sequence of dictionaries that contain information about which security scheme can be used on the endpoint.
             summary: Text used for the route's schema summary section.
             tags: A sequence of string tags that will be appended to the OpenAPI schema.
+            type_decoders: A sequence of tuples, each composed of a predicate testing for type identity and a msgspec
+                hook for deserialization.
             type_encoders: A mapping of types to callables that transform them into types supported for serialization.
             **kwargs: Any additional kwarg - will be set in the opt dictionary.
         """
@@ -1030,6 +1088,7 @@ class put(HTTPRouteHandler):
             opt=opt,
             path=path,
             raises=raises,
+            request_class=request_class,
             response_class=response_class,
             response_cookies=response_cookies,
             response_description=response_description,
@@ -1042,6 +1101,7 @@ class put(HTTPRouteHandler):
             summary=summary,
             sync_to_thread=sync_to_thread,
             tags=tags,
+            type_decoders=type_decoders,
             type_encoders=type_encoders,
             **kwargs,
         )

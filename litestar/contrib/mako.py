@@ -72,7 +72,6 @@ class MakoTemplateEngine(TemplateEngineProtocol[MakoTemplate, Mapping[str, Any]]
             directory: Direct path or list of directory paths from which to serve templates.
             engine_instance: A mako TemplateLookup instance.
         """
-        super().__init__(directory, engine_instance)
         if directory and engine_instance:
             raise ImproperlyConfiguredException("You must provide either a directory or a mako TemplateLookup.")
         if directory:
@@ -120,8 +119,7 @@ class MakoTemplateEngine(TemplateEngineProtocol[MakoTemplate, Mapping[str, Any]]
         """
         self._template_callables.append((key, template_callable))
 
-    @staticmethod
-    def render_string(template_string: str, context: Mapping[str, Any]) -> str:
+    def render_string(self, template_string: str, context: Mapping[str, Any]) -> str:  # pyright: ignore
         """Render a template from a string with the given context.
 
         Args:
@@ -131,7 +129,7 @@ class MakoTemplateEngine(TemplateEngineProtocol[MakoTemplate, Mapping[str, Any]]
         Returns:
             The rendered template as a string.
         """
-        template = _MakoTemplate(template_string)
+        template = _MakoTemplate(template_string)  # noqa: S702
         return template.render(**context)  # type: ignore[no-any-return]
 
     @classmethod

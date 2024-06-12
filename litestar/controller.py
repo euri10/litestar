@@ -12,13 +12,14 @@ from litestar.handlers.base import BaseRouteHandler
 from litestar.handlers.http_handlers import HTTPRouteHandler
 from litestar.handlers.websocket_handlers import WebsocketRouteHandler
 from litestar.types.empty import Empty
-from litestar.utils import ensure_async_callable, normalize_path
+from litestar.utils import normalize_path
 from litestar.utils.signature import add_types_to_signature_namespace
 
 __all__ = ("Controller",)
 
 
 if TYPE_CHECKING:
+    from litestar.connection import Request, WebSocket
     from litestar.datastructures import CacheControlHeader, ETag
     from litestar.dto import AbstractDTO
     from litestar.openapi.spec import SecurityRequirement
@@ -50,6 +51,7 @@ class Controller:
         "after_request",
         "after_response",
         "before_request",
+        "cache_control",
         "dependencies",
         "dto",
         "etag",
@@ -61,15 +63,18 @@ class Controller:
         "owner",
         "parameters",
         "path",
+        "request_class",
         "response_class",
         "response_cookies",
         "response_headers",
         "return_dto",
         "security",
         "signature_namespace",
+        "signature_types",
         "tags",
         "type_encoders",
         "type_decoders",
+        "websocket_class",
     )
 
     after_request: AfterRequestHookHandler | None
@@ -127,6 +132,10 @@ class Controller:
 
     All route handlers under the controller will have the fragment appended to them. If not set it defaults to ``/``.
     """
+    request_class: type[Request] | None
+    """A custom subclass of :class:`Request <.connection.Request>` to be used as the default request for all route
+    handlers under the controller.
+    """
     response_class: type[Response] | None
     """A custom subclass of :class:`Response <.response.Response>` to be used as the default response for all route
     handlers under the controller.
@@ -150,10 +159,14 @@ class Controller:
 
     These types will be added to the signature namespace using their ``__name__`` attribute.
     """
-    type_encoders: TypeEncodersMap | None
-    """A mapping of types to callables that transform them into types supported for serialization."""
     type_decoders: TypeDecodersSequence | None
     """A sequence of tuples, each composed of a predicate testing for type identity and a msgspec hook for deserialization."""
+    type_encoders: TypeEncodersMap | None
+    """A mapping of types to callables that transform them into types supported for serialization."""
+    websocket_class: type[WebSocket] | None
+    """A custom subclass of :class:`WebSocket <.connection.WebSocket>` to be used as the default websocket for all route
+    handlers under the controller.
+    """
 
     def __init__(self, owner: Router) -> None:
         """Initialize a controller.
@@ -163,12 +176,11 @@ class Controller:
         Args:
             owner: An instance of :class:`Router <.router.Router>`
         """
-        # Since functions set on classes are bound, we need replace the bound instance with the class version and wrap
-        # it to ensure it does not get bound.
+        # Since functions set on classes are bound, we need replace the bound instance with the class version
         for key in ("after_request", "after_response", "before_request"):
             cls_value = getattr(type(self), key, None)
             if callable(cls_value):
-                setattr(self, key, ensure_async_callable(cls_value))
+                setattr(self, key, cls_value)
 
         if not hasattr(self, "dto"):
             self.dto = Empty
@@ -191,6 +203,41 @@ class Controller:
         self.response_headers = narrow_response_headers(self.response_headers)
         self.path = normalize_path(self.path or "/")
         self.owner = owner
+
+    def as_router(self) -> Router:
+        from litestar.router import Router
+
+        router = Router(
+            path=self.path,
+            route_handlers=self.get_route_handlers(),
+            after_request=self.after_request,
+            after_response=self.after_response,
+            before_request=self.before_request,
+            cache_control=self.cache_control,
+            dependencies=self.dependencies,
+            dto=self.dto,
+            etag=self.etag,
+            exception_handlers=self.exception_handlers,
+            guards=self.guards,
+            include_in_schema=self.include_in_schema,
+            middleware=self.middleware,
+            opt=self.opt,
+            parameters=self.parameters,
+            request_class=self.request_class,
+            response_class=self.response_class,
+            response_cookies=self.response_cookies,
+            response_headers=self.response_headers,
+            return_dto=self.return_dto,
+            security=self.security,
+            signature_types=self.signature_types,
+            signature_namespace=self.signature_namespace,
+            tags=self.tags,
+            type_encoders=self.type_encoders,
+            type_decoders=self.type_decoders,
+            websocket_class=self.websocket_class,
+        )
+        router.owner = self.owner
+        return router
 
     def get_route_handlers(self) -> list[BaseRouteHandler]:
         """Get a controller's route handlers and set the controller as the handlers' owner.

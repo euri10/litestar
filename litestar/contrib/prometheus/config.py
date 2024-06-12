@@ -15,7 +15,7 @@ __all__ = ("PrometheusConfig",)
 try:
     import prometheus_client  # noqa: F401
 except ImportError as e:
-    raise MissingDependencyException("prometheus_client") from e
+    raise MissingDependencyException("prometheus_client", "prometheus-client", "prometheus") from e
 
 
 if TYPE_CHECKING:
@@ -49,6 +49,9 @@ class PrometheusConfig:
     """ASGI scopes processed by the middleware, if None both ``http`` and ``websocket`` will be processed."""
     middleware_class: type[PrometheusMiddleware] = field(default=PrometheusMiddleware)
     """The middleware class to use.
+    """
+    group_path: bool = field(default=False)
+    """Whether to group paths in the metrics to avoid cardinality explosion.
     """
 
     @property

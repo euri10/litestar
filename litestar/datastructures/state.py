@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from copy import copy, deepcopy
+from copy import deepcopy
 from threading import RLock
 from typing import TYPE_CHECKING, Any, Callable, Generator, Iterable, Iterator, Mapping, MutableMapping
+
+from litestar.utils.scope.state import CONNECTION_STATE_KEY
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -143,7 +145,7 @@ class ImmutableState(Mapping[str, Any]):
         Returns:
             A dict
         """
-        return copy(self._state)
+        return {k: v for k, v in self._state.items() if k != CONNECTION_STATE_KEY}
 
     @classmethod
     def __get_validators__(
@@ -188,8 +190,8 @@ class State(ImmutableState, MutableMapping[str, Any]):
              state: An object to initialize the state from. Can be a dict, an instance of 'ImmutableState', or a tuple of key value paris.
              deep_copy: Whether to 'deepcopy' the passed in state.
 
-        Examples:
         .. code-block:: python
+            :caption: Examples
 
             from litestar.datastructures import State
 

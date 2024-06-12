@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import sys
 
 import pytest
@@ -17,6 +18,8 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from litestar import Litestar
 from litestar.testing import TestClient
 
+pytestmark = pytest.mark.xdist_group("sqlalchemy_examples")
+
 
 @pytest.fixture(
     params=[
@@ -28,13 +31,11 @@ from litestar.testing import TestClient
     ]
 )
 async def app(monkeypatch: MonkeyPatch, request: FixtureRequest) -> Litestar:
-    from docs.examples.contrib.sqlalchemy.plugins.tutorial.full_app_no_plugins import Base
+    app_module = importlib.reload(request.param)
 
-    app_module = request.param
-
-    engine = create_async_engine("sqlite+aiosqlite://")
+    engine = create_async_engine("sqlite+aiosqlite://", connect_args={"check_same_thread": False})
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(app_module.Base.metadata.create_all)
 
     try:
         monkeypatch.setattr(app_module, "create_async_engine", lambda *a, **kw: engine)
@@ -42,7 +43,7 @@ async def app(monkeypatch: MonkeyPatch, request: FixtureRequest) -> Litestar:
         app_module.db_config.connection_string = None
         app_module.db_config.engine_instance = engine
 
-    return app_module.app
+    yield app_module.app
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="Unknown - fails on Windows and macOS, in CI only")

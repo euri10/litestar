@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from functools import lru_cache
+from functools import lru_cache, partial
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, Mapping, NamedTuple, cast
 
 from litestar._multipart import parse_multipart_form
@@ -11,10 +11,13 @@ from litestar._parsers import (
 )
 from litestar.datastructures import Headers
 from litestar.datastructures.upload_file import UploadFile
+from litestar.datastructures.url import URL
 from litestar.enums import ParamType, RequestEncodingType
 from litestar.exceptions import ValidationException
 from litestar.params import BodyKwarg
 from litestar.types import Empty
+from litestar.utils import make_non_optional_union
+from litestar.utils.predicates import is_non_string_sequence, is_optional_union
 from litestar.utils.scope.state import ScopeState
 
 if TYPE_CHECKING:
@@ -105,8 +108,12 @@ def create_connection_value_extractor(
             values.update(connection_mapping)
         except KeyError as e:
             param = alias_to_params[e.args[0]]
+            path = URL.from_components(
+                path=connection.url.path,
+                query=connection.url.query,
+            )
             raise ValidationException(
-                f"Missing required {param.param_type.value} parameter {param.field_alias!r} for url {connection.url}"
+                f"Missing required {param.param_type.value} parameter {param.field_alias!r} for path {path}"
             ) from e
 
     return extractor
@@ -129,7 +136,7 @@ def create_query_default_dict(
 
     for k, v in parsed_query:
         if k in sequence_query_parameter_names:
-            output[k].append(v)  # type: ignore
+            output[k].append(v)  # type: ignore[union-attr]
         else:
             output[k] = v
 
@@ -295,6 +302,8 @@ async def json_extractor(connection: Request[Any, Any, Any]) -> Any:
     Returns:
         The JSON value.
     """
+    if not await connection.body():
+        return Empty
     return await connection.json()
 
 
@@ -310,7 +319,66 @@ async def msgpack_extractor(connection: Request[Any, Any, Any]) -> Any:
     Returns:
         The MessagePack value.
     """
+    if not await connection.body():
+        return Empty
     return await connection.msgpack()
+
+
+async def _extract_multipart(
+    connection: Request[Any, Any, Any],
+    body_kwarg_multipart_form_part_limit: int | None,
+    field_definition: FieldDefinition,
+    is_data_optional: bool,
+    data_dto: type[AbstractDTO] | None,
+) -> Any:
+    multipart_form_part_limit = (
+        body_kwarg_multipart_form_part_limit
+        if body_kwarg_multipart_form_part_limit is not None
+        else connection.app.multipart_form_part_limit
+    )
+    connection.scope["_form"] = form_values = (  # type: ignore[typeddict-unknown-key]
+        connection.scope["_form"]  # type: ignore[typeddict-item]
+        if "_form" in connection.scope
+        else parse_multipart_form(
+            body=await connection.body(),
+            boundary=connection.content_type[-1].get("boundary", "").encode(),
+            multipart_form_part_limit=multipart_form_part_limit,
+            type_decoders=connection.route_handler.resolve_type_decoders(),
+        )
+    )
+
+    if field_definition.is_non_string_sequence:
+        values = list(form_values.values())
+        if isinstance(values[0], list) and (
+            field_definition.has_inner_subclass_of(UploadFile)
+            or (field_definition.is_optional and field_definition.inner_types[0].is_non_string_sequence)
+        ):
+            return values[0]
+
+        return values
+
+    if field_definition.is_simple_type and field_definition.annotation is UploadFile and form_values:
+        return next(v for v in form_values.values() if isinstance(v, UploadFile))
+
+    if not form_values and is_data_optional:
+        return None
+
+    if data_dto:
+        return data_dto(connection).decode_builtins(form_values)
+
+    for name, tp in field_definition.get_type_hints().items():
+        value = form_values.get(name)
+        if (
+            value is not None
+            and not isinstance(value, list)
+            and (
+                is_non_string_sequence(tp)
+                or (is_optional_union(tp) and is_non_string_sequence(make_non_optional_union(tp)))
+            )
+        ):
+            form_values[name] = [value]
+
+    return form_values
 
 
 def create_multipart_extractor(
@@ -330,39 +398,13 @@ def create_multipart_extractor(
     if field_definition.kwarg_definition and isinstance(field_definition.kwarg_definition, BodyKwarg):
         body_kwarg_multipart_form_part_limit = field_definition.kwarg_definition.multipart_form_part_limit
 
-    async def extract_multipart(
-        connection: Request[Any, Any, Any],
-    ) -> Any:
-        multipart_form_part_limit = (
-            body_kwarg_multipart_form_part_limit
-            if body_kwarg_multipart_form_part_limit is not None
-            else connection.app.multipart_form_part_limit
-        )
-        connection.scope["_form"] = form_values = (  # type: ignore[typeddict-unknown-key]
-            connection.scope["_form"]  # type: ignore[typeddict-item]
-            if "_form" in connection.scope
-            else parse_multipart_form(
-                body=await connection.body(),
-                boundary=connection.content_type[-1].get("boundary", "").encode(),
-                multipart_form_part_limit=multipart_form_part_limit,
-                type_decoders=connection.route_handler.resolve_type_decoders(),
-            )
-        )
-
-        if field_definition.is_non_string_sequence:
-            values = list(form_values.values())
-            if field_definition.inner_types[0].annotation is UploadFile and isinstance(values[0], list):
-                return values[0]
-
-            return values
-
-        if field_definition.is_simple_type and field_definition.annotation is UploadFile and form_values:
-            return next(v for v in form_values.values() if isinstance(v, UploadFile))
-
-        if not form_values and is_data_optional:
-            return None
-
-        return data_dto(connection).decode_builtins(form_values) if data_dto else form_values
+    extract_multipart = partial(
+        _extract_multipart,
+        body_kwarg_multipart_form_part_limit=body_kwarg_multipart_form_part_limit,
+        is_data_optional=is_data_optional,
+        data_dto=data_dto,
+        field_definition=field_definition,
+    )
 
     return cast("Callable[[ASGIConnection[Any, Any, Any, Any]], Coroutine[Any, Any, Any]]", extract_multipart)
 
@@ -454,7 +496,8 @@ def create_dto_extractor(
     """
 
     async def dto_extractor(connection: Request[Any, Any, Any]) -> Any:
-        body = await connection.body()
+        if not (body := await connection.body()):
+            return Empty
         return data_dto(connection).decode_bytes(body)
 
     return dto_extractor  # type:ignore[return-value]

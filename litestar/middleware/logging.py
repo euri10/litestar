@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from inspect import isawaitable
 from typing import TYPE_CHECKING, Any, Iterable
 
 from litestar.constants import (
@@ -42,14 +41,12 @@ try:
 
     structlog_installed = True
 except ImportError:
-    BindableLogger = object  # type: ignore
+    BindableLogger = object  # type: ignore[assignment, misc]
     structlog_installed = False
 
 
 class LoggingMiddleware(AbstractMiddleware):
     """Logging middleware."""
-
-    __slots__ = ("config", "logger", "request_extractor", "response_extractor", "is_struct_logger")
 
     logger: Logger
 
@@ -81,6 +78,7 @@ class LoggingMiddleware(AbstractMiddleware):
             obfuscate_headers=self.config.request_headers_to_obfuscate,
             parse_body=self.is_struct_logger,
             parse_query=self.is_struct_logger,
+            skip_parse_malformed_body=True,
         )
         self.response_extractor = ResponseDataExtractor(
             extract_body="body" in self.config.response_log_fields,
@@ -172,12 +170,11 @@ class LoggingMiddleware(AbstractMiddleware):
 
         data: dict[str, Any] = {"message": self.config.request_log_message}
         serializer = get_serializer_from_scope(request.scope)
-        extracted_data = self.request_extractor(connection=request)
+
+        extracted_data = await self.request_extractor.extract(connection=request, fields=self.config.request_log_fields)
+
         for key in self.config.request_log_fields:
-            value = extracted_data.get(key)
-            if isawaitable(value):
-                value = await value
-            data[key] = self._serialize_value(serializer, value)
+            data[key] = self._serialize_value(serializer, extracted_data.get(key))
         return data
 
     def extract_response_data(self, scope: Scope) -> dict[str, Any]:
@@ -194,7 +191,9 @@ class LoggingMiddleware(AbstractMiddleware):
         connection_state = ScopeState.from_scope(scope)
         extracted_data = self.response_extractor(
             messages=(
-                connection_state.log_context.pop(HTTP_RESPONSE_START),
+                # NOTE: we don't pop the start message from the logging context in case
+                #   there are multiple body messages to be logged
+                connection_state.log_context[HTTP_RESPONSE_START],
                 connection_state.log_context.pop(HTTP_RESPONSE_BODY),
             ),
         )
@@ -227,6 +226,10 @@ class LoggingMiddleware(AbstractMiddleware):
             elif message["type"] == HTTP_RESPONSE_BODY:
                 connection_state.log_context[HTTP_RESPONSE_BODY] = message
                 self.log_response(scope=scope)
+
+                if not message["more_body"]:
+                    connection_state.log_context.clear()
+
             await send(message)
 
         return send_wrapper
@@ -271,7 +274,7 @@ class LoggingMiddlewareConfig:
     response_log_message: str = field(default="HTTP Response")
     """Log message to prepend when logging a response."""
     request_log_fields: Iterable[RequestExtractorField] = field(
-        default_factory=lambda: (
+        default=(
             "path",
             "method",
             "content_type",
@@ -290,7 +293,7 @@ class LoggingMiddlewareConfig:
         -  To turn off logging of requests, use and empty iterable.
     """
     response_log_fields: Iterable[ResponseExtractorField] = field(
-        default_factory=lambda: (
+        default=(
             "status_code",
             "cookies",
             "headers",
@@ -305,7 +308,7 @@ class LoggingMiddlewareConfig:
             Thus, re-arranging the log-message is as simple as changing the iterable.
         -  To turn off logging of responses, use and empty iterable.
     """
-    middleware_class: type[LoggingMiddleware] = field(default_factory=lambda: LoggingMiddleware)
+    middleware_class: type[LoggingMiddleware] = field(default=LoggingMiddleware)
     """Middleware class to use.
 
     Should be a subclass of [litestar.middleware.LoggingMiddleware].
@@ -344,9 +347,10 @@ class LoggingMiddlewareConfig:
 
                 logging_middleware_config = LoggingMiddlewareConfig()
 
+
                 @get("/")
-                def my_handler(request: Request) -> None:
-                    ...
+                def my_handler(request: Request) -> None: ...
+
 
                 app = Litestar(
                     route_handlers=[my_handler],
