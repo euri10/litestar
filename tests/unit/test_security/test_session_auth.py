@@ -33,9 +33,13 @@ def retrieve_user_handler(session_data: Dict[str, Any], _: "ASGIConnection") -> 
 def test_authentication(session_backend_config_memory: ServerSideSessionConfig) -> None:
     session_auth = SessionAuth[Any, ServerSideSessionBackend](
         retrieve_user_handler=retrieve_user_handler,
-        exclude=["login"],
+        exclude=["/login", "/"],
         session_backend_config=session_backend_config_memory,
     )
+
+    @get("/")
+    def home_handler() -> str:
+        return "Hello, World!"
 
     @post("/login")
     def login_handler(request: "Request[Any, Any, Any]", data: User) -> None:
@@ -50,7 +54,7 @@ def test_authentication(session_backend_config_memory: ServerSideSessionConfig) 
         return request.user
 
     with create_test_client(
-        route_handlers=[login_handler, delete_user_handler, get_user_handler],
+        route_handlers=[login_handler, delete_user_handler, get_user_handler, home_handler],
         on_app_init=[session_auth.on_app_init],
     ) as client:
         response = client.get(f"user/{user_instance.id}")
