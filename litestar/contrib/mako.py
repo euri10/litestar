@@ -72,6 +72,7 @@ class MakoTemplateEngine(TemplateEngineProtocol[MakoTemplate, Mapping[str, Any]]
             directory: Direct path or list of directory paths from which to serve templates.
             engine_instance: A mako TemplateLookup instance.
         """
+        self.context_processors = None
         if directory and engine_instance:
             raise ImproperlyConfiguredException("You must provide either a directory or a mako TemplateLookup.")
         if directory:

@@ -52,20 +52,18 @@ def test_context_processor(tmp_path: Path) -> None:
     def bar_processor(request: Request):
         return "foo"
 
-    async def afoo_processor(request: Request):
-        await asyncio.sleep(0.1)
-        return {"afoo": "abar"}
+    # async def afoo_processor(request: Request):
+    #     await asyncio.sleep(0.1)
+    #     return "abar"
 
     with create_test_client(
         route_handlers=[handler],
         template_config=TemplateConfig(
             directory=tmp_path,
             engine=JinjaTemplateEngine,
-            context_processors={
-                "foo_key": foo_processor,
-                "bar_key": bar_processor,
-                # "afoo_key": afoo_processor
-            },
+            context_processors={"foo_key": foo_processor, "bar_key": bar_processor,
+                                # "afoo_key": afoo_processor
+                                },
         ),
     ) as client:
         response = client.get("/")

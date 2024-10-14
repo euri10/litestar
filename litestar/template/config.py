@@ -50,7 +50,8 @@ class TemplateConfig(Generic[EngineType]):
         )
         if callable(self.engine_callback):
             self.engine_callback(template_engine)
-        template_engine.register_template_context_processor(self.context_processors)
+        if self.context_processors:
+            template_engine.register_template_context_processor(self.context_processors)
         return template_engine
 
     @cached_property

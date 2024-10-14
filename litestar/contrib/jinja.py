@@ -24,7 +24,6 @@ if TYPE_CHECKING:
 
     from jinja2 import Template as JinjaTemplate
 
-    from litestar import Request
 
 __all__ = ("JinjaTemplateEngine",)
 
@@ -119,18 +118,3 @@ class JinjaTemplateEngine(TemplateEngineProtocol["JinjaTemplate", Mapping[str, A
             JinjaTemplateEngine instance
         """
         return cls(directory=None, engine_instance=jinja_environment)
-
-    def update_template_context(self, context: dict[str, Any], request: Request) -> dict[str, Any]:
-        """Update the template context with the template engine's context processors.
-
-        Args:
-            context: A dictionary holding the template context.
-            request: A :class:`Request <litestar.connection.Request>` instance.
-
-        Returns:
-            The updated template context.
-        """
-        for processor_key, processor_func in self.context_processors.items():
-            if callable(processor_func):
-                context.update({processor_key: processor_func(request)})
-        return context

@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import asyncio
 import itertools
+from inspect import isawaitable
 from mimetypes import guess_type
 from pathlib import PurePath
 from typing import TYPE_CHECKING, Any, Iterable, cast
 
+import litestar.utils.sync
 from litestar.enums import MediaType
 from litestar.exceptions import ImproperlyConfiguredException
 from litestar.response.base import ASGIResponse, Response
 from litestar.status_codes import HTTP_200_OK
+from litestar.utils import is_async_callable
 from litestar.utils.deprecation import warn_deprecation
 from litestar.utils.empty import value_or_default
 from litestar.utils.scope.state import ScopeState
@@ -97,6 +101,25 @@ class Template(Response[bytes]):
             "csrf_input": f'<input type="hidden" name="_csrf_token" value="{csrf_token}" />',
         }
 
+    def update_template_context(self, context: dict[str, Any], request: Request) -> dict[str, Any]:
+        """Update the template context with the template engine's context processors.
+
+        Args:
+            context: A dictionary holding the template context.
+            request: A :class:`Request <litestar.connection.Request>` instance.
+
+        Returns:
+            The updated template context.
+        """
+        if not request.app.template_engine.context_processors:
+            return context
+        for processor_key, processor_func in request.app.template_engine.context_processors.items():
+            if callable(processor_func):
+                context.update({processor_key: processor_func(request)})
+            # if is_async_callable(processor_func):
+            #     context.update({processor_key: litestar.utils.sync.sync_to_thread(processor_func(request))})
+        return context
+
     def to_asgi_response(
         self,
         app: Litestar | None,
@@ -140,7 +163,7 @@ class Template(Response[bytes]):
                 media_type = MediaType.HTML
 
         context = self.create_template_context(request)
-        context = template_engine.update_template_context(context, request)
+        context = self.update_template_context(context, request)
 
         if self.template_str is not None:
             body = template_engine.render_string(self.template_str, context)
