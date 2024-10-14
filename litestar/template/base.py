@@ -166,6 +166,18 @@ class TemplateEngineProtocol(Protocol[TemplateType_co, ContextType_co]):
             None
         """
 
+    def register_template_context_processor(
+        self, context_processor: Callable[[ContextType_co], Mapping[str, Any]]
+    ) -> None:
+        """Register a context processor on the template engine.
+
+        Args:
+            context_processor: A context processor to register.
+
+        Returns:
+            None
+        """
+
 
 class _TemplateContext(TypedDict):
     """Dictionary representing a template context."""

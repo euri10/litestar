@@ -1,9 +1,10 @@
+import asyncio
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from litestar import MediaType, get
+from litestar import MediaType, Request, get
 from litestar.contrib.jinja import JinjaTemplateEngine
 from litestar.contrib.mako import MakoTemplateEngine
 from litestar.contrib.minijinja import MiniJinjaTemplateEngine
@@ -36,3 +37,36 @@ def test_request_is_set_in_context(engine: Any, template: str, expected: str, tm
     ) as client:
         response = client.get("/")
         assert response.text == expected
+
+
+def test_context_processor(tmp_path: Path) -> None:
+    Path(tmp_path / "processor.html").write_text("""{{ bar_key }}-{{ foo_key }}""")
+
+    @get(path="/")
+    def handler() -> Template:
+        return Template(template_name="processor.html")
+
+    def foo_processor(request: Request):
+        return "bar"
+
+    def bar_processor(request: Request):
+        return "foo"
+
+    async def afoo_processor(request: Request):
+        await asyncio.sleep(0.1)
+        return {"afoo": "abar"}
+
+    with create_test_client(
+        route_handlers=[handler],
+        template_config=TemplateConfig(
+            directory=tmp_path,
+            engine=JinjaTemplateEngine,
+            context_processors={
+                "foo_key": foo_processor,
+                "bar_key": bar_processor,
+                # "afoo_key": afoo_processor
+            },
+        ),
+    ) as client:
+        response = client.get("/")
+        assert response.text == "foo-bar"

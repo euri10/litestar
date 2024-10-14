@@ -32,6 +32,7 @@ class TemplateConfig(Generic[EngineType]):
     """A callback function that allows modifying the instantiated templating protocol."""
     instance: EngineType | None = field(default=None)
     """An instance of the templating protocol."""
+    context_processors: dict[str, Callable] | None = field(default=None)
 
     def __post_init__(self) -> None:
         """Ensure that directory is set if engine is a class."""
@@ -49,6 +50,7 @@ class TemplateConfig(Generic[EngineType]):
         )
         if callable(self.engine_callback):
             self.engine_callback(template_engine)
+        template_engine.register_template_context_processor(self.context_processors)
         return template_engine
 
     @cached_property

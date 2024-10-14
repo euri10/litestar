@@ -140,6 +140,7 @@ class Template(Response[bytes]):
                 media_type = MediaType.HTML
 
         context = self.create_template_context(request)
+        context = template_engine.update_template_context(context, request)
 
         if self.template_str is not None:
             body = template_engine.render_string(self.template_str, context)
