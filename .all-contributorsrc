@@ -1895,6 +1895,25 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "RenameMe1",
+      "name": "Evgeny Demchenko",
+      "avatar_url": "https://avatars.githubusercontent.com/u/165988121?v=4",
+      "profile": "https://github.com/RenameMe1",
+      "contributions": [
+        "doc"
+      ]
+    },
+    {
+      "login": "olzhasar",
+      "name": "Olzhas Arystanov",
+      "avatar_url": "https://avatars.githubusercontent.com/u/12471703?v=4",
+      "profile": "https://olzhasar.com",
+      "contributions": [
+        "bug",
+        "doc"
+      ]
     }
   ],
   "contributorsPerLine": 7,
