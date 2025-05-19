@@ -7,7 +7,7 @@ from httpx import USE_CLIENT_DEFAULT, Client
 
 from litestar.testing.client.base import BaseTestClient
 from litestar.testing.life_span_handler import LifeSpanHandler
-from litestar.testing.transport import ConnectionUpgradeExceptionError, TestClientTransport
+from litestar.testing.transport import ConnectionUpgradeExceptionError, SyncTestClientTransport
 from litestar.types import AnyIOBackend, ASGIApp
 
 if TYPE_CHECKING:
@@ -75,7 +75,7 @@ class TestClient(Client, BaseTestClient, Generic[T]):  # type: ignore[misc]
             headers={"user-agent": "testclient"},
             follow_redirects=True,
             cookies=cookies,
-            transport=TestClientTransport(  # type: ignore[arg-type]
+            transport=SyncTestClientTransport(  # type: ignore[arg-type]
                 client=self,
                 raise_server_exceptions=raise_server_exceptions,
                 root_path=root_path,

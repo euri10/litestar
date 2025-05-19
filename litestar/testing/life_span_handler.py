@@ -59,6 +59,26 @@ class LifeSpanHandler(Generic[T]):
             portal.call(self.stream_send.aclose)
             portal.call(self.stream_receive.aclose)
 
+    async def aclose(self) -> None:
+        await self.stream_send.aclose()
+        await self.stream_receive.aclose()
+
+    async def __aenter__(self) -> LifeSpanHandler:
+        try:
+            self._ensure_setup(is_safe=True)
+        except Exception as exc:
+            await self.aclose()
+            raise exc
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        await self.aclose()
+
     def __enter__(self) -> LifeSpanHandler:
         try:
             self._ensure_setup(is_safe=True)
