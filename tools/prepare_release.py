@@ -78,7 +78,7 @@ def _pr_number_from_commit(comp: Comp) -> int:
     message_head = comp.commit.message.split("\n\n")[0]
     match = re.search(r"\(#(\d+)\)$", message_head)
     if not match:
-        print(f"Could not find PR number in {message_head}")  # noqa: T201
+        print(f"Could not find PR number in {message_head}")
     return int(match[1]) if match else None
 
 

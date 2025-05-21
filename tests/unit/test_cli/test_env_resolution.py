@@ -54,7 +54,7 @@ def test_env_from_env_autodiscover_from_files(
 
     assert isinstance(env.app, Litestar)
 
-    print("parent directory content: %s", list(tmp_file_path.parent.iterdir()))  # noqa: T201
+    print("parent directory content: %s", list(tmp_file_path.parent.iterdir()))
     assert env.app_path == f"{dotted_path}:{app_file_app_name}"
 
 

@@ -55,8 +55,8 @@ class MiddlewareWithArgsAndKwargs(BaseHTTPMiddleware):
     "middleware",
     [
         BaseMiddlewareRequestLoggingMiddleware,
-        # Middleware(MiddlewareWithArgsAndKwargs, kwarg="123Jeronimo"),  # pyright: ignore[reportGeneralTypeIssues] # noqa: ERA001
-        # Middleware(MiddlewareProtocolRequestLoggingMiddleware, kwarg="123Jeronimo"),  # type: ignore[arg-type] # pyright: ignore[reportGeneralTypeIssues] # noqa: ERA001
+        # Middleware(MiddlewareWithArgsAndKwargs, kwarg="123Jeronimo"),  # pyright: ignore[reportGeneralTypeIssues]
+        # Middleware(MiddlewareProtocolRequestLoggingMiddleware, kwarg="123Jeronimo"),  # type: ignore[arg-type] # pyright: ignore[reportGeneralTypeIssues]
         DefineMiddleware(MiddlewareWithArgsAndKwargs, 1, kwarg="123Jeronimo"),  # type: ignore[arg-type]
         DefineMiddleware(MiddlewareProtocolRequestLoggingMiddleware, kwarg="123Jeronimo"),
     ],

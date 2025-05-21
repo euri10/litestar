@@ -35,4 +35,4 @@ def main(tag: str) -> str:
 
 
 if __name__ == "__main__":
-    print(main(sys.argv[1]))  # noqa: T201
+    print(main(sys.argv[1]))
