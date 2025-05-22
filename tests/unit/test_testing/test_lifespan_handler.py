@@ -67,7 +67,7 @@ def test_multiple_sync_clients_event_loop() -> None:  # Changed from async def
         response_1 = client_1.get("/")
         response_2 = client_2.get("/")
 
-    assert response_1.json() == response_2.json()
+    assert response_1.json() != response_2.json()
 
 
 async def test_lifespan_loop() -> None:

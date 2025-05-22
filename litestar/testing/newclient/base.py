@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 import sys  # Import the sys module
-from contextlib import AsyncExitStack
-from typing import TYPE_CHECKING, Generic, TypeVar, cast
+from contextlib import AsyncExitStack, ExitStack, contextmanager
+from typing import TYPE_CHECKING, Generator, Generic, TypeVar, cast
 
 import anyio
-from httpx import ASGITransport, AsyncClient, Client  # Import ASGITransport
+from anyio.from_thread import BlockingPortal, start_blocking_portal
+from httpx import AsyncClient, Client  # Import ASGITransport
 
 from litestar import Litestar
 from litestar.testing.client.base import _wrap_app_to_add_state
+from litestar.testing.newclient.transports import MyASGIAsyncTransport, MyASGISyncTransport
 from litestar.types import (
     ASGIApp,
     LifeSpanReceiveMessage,
-    LifeSpanScope,
     LifeSpanSendMessage,
 )
 
@@ -21,6 +22,7 @@ T_App = TypeVar("T_App", bound=ASGIApp)
 if TYPE_CHECKING:
     from types import TracebackType
 
+    from anyio.abc import TaskGroup
     from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 
 
@@ -49,7 +51,7 @@ class MyLifespanManager:
             max_buffer_size=1
         )
 
-        self._task_group: anyio.abc.TaskGroup | None = None
+        self._task_group: TaskGroup | None = None
 
     async def _asgi_receive(self) -> LifeSpanReceiveMessage:  # Updated signature
         """Called by the ASGI app to receive messages from the lifespan manager."""
@@ -72,10 +74,9 @@ class MyLifespanManager:
 
     async def _run_app_lifespan(self) -> None:
         """Runs the ASGI application with the lifespan scope."""
-        scope: LifeSpanScope = {
+        scope = {
             "type": "lifespan",
-            "asgi": {"version": "3.0", "spec_version": "2.1"},
-        }  # Explicitly typed scope
+        }
         try:
             await self.app(scope, self._asgi_receive, self._asgi_send)
         except anyio.get_cancelled_exc_class():
@@ -210,20 +211,22 @@ class MySyncTestClient(Client, Generic[T_App]):
     def __init__(self, app: T_App, base_url: str = "http://testserver.local"):
         self.app = app
         # Let httpx.Client handle ASGI app, portal, and lifespan for sync client
-        transport = ASGITransport(app=app)  # type: ignore[arg-type]
+        transport = MyASGISyncTransport(client=self)
         super().__init__(transport=transport, base_url=base_url)
         print(f"MySyncTestClient initialized for app: {app} (using httpx lifespan)")
 
-        # The following custom portal and lifespan manager are no longer needed here,
-        # as httpx.Client's ASGITransport will manage its own.
-        # self._exit_stack = ExitStack()
-        # self._portal: anyio.from_thread.BlockingPortal | None = None
-        # self._lifespan_manager: MyLifespanManager | None = None
+        self._exit_stack = ExitStack()
+        self._lifespan_manager: MyLifespanManager | None = None
+
+    @contextmanager
+    def portal(self) -> Generator[BlockingPortal, None, None]:
+        with start_blocking_portal() as portal:
+            yield portal
 
     def __enter__(self) -> MySyncTestClient:
         print("MySyncTestClient: Entering context (delegating to httpx)...")
         # super().__enter__() will correctly initialize the lifespan via ASGITransport
-        return super().__enter__()
+        return cast(MySyncTestClient, super().__enter__())
 
     def __exit__(
         self,
@@ -241,7 +244,7 @@ class MyAsyncTestClient(AsyncClient, Generic[T_App]):
     def __init__(self, app: T_App, base_url: str = "http://testserver.local"):  # Removed **kwargs
         self.app = app
         # Pass an ASGITransport instance to super() for in-memory testing.
-        transport = ASGITransport(app=app)  # type: ignore[arg-type] # Add type ignore for now
+        transport = MyASGIAsyncTransport(client=self)
         super().__init__(transport=transport, base_url=base_url)  # Removed **kwargs
         print(f"MyAsyncTestClient initialized for app: {app}")
 
